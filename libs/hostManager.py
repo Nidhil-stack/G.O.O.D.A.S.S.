@@ -96,7 +96,17 @@ def hosts_add(config, host, user):
     return config
 
 def hosts_remove(config, host, user=None):
-    """Removes a host from the configuration."""
+    """
+    Removes a specific user from a host, or removes the entire host from the configuration.
+
+    Parameters:
+    - config (dict): The configuration dictionary containing hosts and users.
+    - host (str): The name of the host to remove or modify.
+    - user (str, optional): The user to remove from the host. If None, the entire host is removed.
+
+    Returns:
+    - config (dict): The modified configuration dictionary.
+    """
     if 'hosts' not in config:
         print("No hosts found in configuration.")
         return config
