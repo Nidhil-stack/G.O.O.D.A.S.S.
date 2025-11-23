@@ -16,6 +16,8 @@ import libs.userManager as userManager
 pwds = {}
 
 directory = "./tempKeys"
+if not os.path.exists(directory):
+    os.makedirs(directory)
 
 import signal
 def signal_handler(sig, frame):
@@ -35,8 +37,6 @@ def graceFulExit():
                 print(f'Failed to delete {file_path}. Reason: {e}')
         os.rmdir(directory)
     exit()
-if not os.path.exists(directory):
-    os.makedirs(directory)
 
 menu = """
 Welcome to the SSH Key Manager, please select an option:\n
