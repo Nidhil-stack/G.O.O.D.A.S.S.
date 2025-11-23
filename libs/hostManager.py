@@ -74,7 +74,7 @@ def hosts_add(config, host, user):
                 print(f"Host {host} already exists in configuration.")
                 input("Press Enter to continue...")
                 return config
-            if user in h['users']:
+            if user in h.get('users', []):
                 print(f"User {user} already exists for host {host} in configuration.")
                 input("Press Enter to continue...")
                 return config
