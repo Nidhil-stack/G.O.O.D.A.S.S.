@@ -97,9 +97,7 @@ def graceFulExit():
 
 ########### new functions to be moved to libs/userManager.py ###########
 
-
-
-def print_user_table(config):
+def user_print(config):
     users = config.get('users', [])
     user_table = prettytable.PrettyTable()
     user_table.field_names = ["Username", "Email", "Keys"]
@@ -109,7 +107,7 @@ def print_user_table(config):
         username = user.get('name', 'N/A')
         keys_info = user.get('keys', [])
         if not keys_info:
-            keys = 'N/A'
+            user_table.add_row([username, email, 'No keys'])
         else:
             for key in keys_info:
                 key_type = key.get('type', 'N/A')
@@ -122,7 +120,7 @@ def print_user_table(config):
                 i += 1
     print(user_table)
 
-def add_user(config, username, email, keys):
+def user_add(config, username, email, keys):
     new_user = {
         'name': username,
         'email': email,
@@ -145,7 +143,7 @@ def save_config(config, path='config.yaml'):
     with open(path, 'w') as f:
         yaml.dump(config, f)
 
-def add_user_cli(config):
+def user_add_cli(config):
     username = input("Insert new user name: ")
     email = input("Insert new user email: ")
     keys = []
@@ -160,7 +158,7 @@ def add_user_cli(config):
             keys.append({'type': key_type, 'key': key_value, 'hostname': key_hostname})
         except IndexError:
             print("Invalid key format. Please enter the key in the format: <type> <key> [hostname]")
-    config = add_user(config, username, email, keys)
+    config = user_add(config, username, email, keys)
     save_config(config)
 
 
@@ -171,6 +169,10 @@ def user_add_key(config, email, key):
             key_type = key.split()[0]
             key_value = key.split()[1]
             key_hostname = key.split()[2] if len(key.split()) > 2 else ''
+            for existing_key in user.get('keys', []):
+                if existing_key['key'] == key_value:
+                    print(f"Key already exists for user {user['name']}.")
+                    return config
             user.setdefault('keys', []).append({'type': key_type, 'key': key_value, 'hostname': key_hostname})
             return config
     return config
@@ -203,23 +205,92 @@ def user_add_key_cli(config):
     save_config(config)
 
 
+def user_key_remove(config, email, key_value):
+    users = config.get('users', [])
+    for user in users:
+        if user['email'] == email:
+            keys = user.get('keys', [])
+            for existing_key in keys:
+                if existing_key['key'] == key_value:
+                    keys.remove(existing_key)
+                    return config
+            print(f"Key not found for user {user['name']}.")
+            return config
+    return config
+
+def user_key_remove_cli(config):
+    email = input("Insert user email to remove key: ")
+    users = config.get('users', [])
+    user_exists = False
+    for user in users:
+        if user['email'] == email:
+            user_exists = True
+            break
+    if not user_exists:
+        print(f"User with email {email} does not exist.")
+        return config
+    while True:
+        user_key_print(config, email)
+        key_number = input("Insert key number to remove or 'done' to finish: ")
+        try:
+            key_index = int(key_number) - 1
+            users = config.get('users', [])
+            for user in users:
+                if user['email'] == email:
+                    keys = user.get('keys', [])
+                    if 0 <= key_index < len(keys):
+                        key_value = keys[key_index]['key']
+                    else:
+                        print("Invalid key number.")
+                        continue
+        except ValueError:
+            if key_number.lower() == 'done':
+                break
+            print("Invalid input. Please enter a valid key number or 'done'.")
+            continue
+        for user in users:
+            if user['email'] == email:
+                keys = user.get('keys', [])
+                for existing_key in keys:
+                    if existing_key['key'] == key_value:
+                        keys.remove(existing_key)
+                        print(f"Key removed from user {user['name']}.")
+                        break
+                else:
+                    print(f"Key not found for user {user['name']}.")
+    save_config(config)
+
+
+def user_key_print(config, email):
+    users = config.get('users', [])
+    for user in users:
+        if user['email'] == email:
+            key_table = prettytable.PrettyTable()
+            key_table.field_names = ["Number", "Type", "Key", "Hostname"]
+            for i, key in enumerate(user.get('keys', []), start=1):
+                key_type = key.get('type', 'N/A')
+                key_value = key.get('key', 'N/A')
+                key_hostname = key.get('hostname', 'N/A')
+                key_table.add_row([i, key_type, key_value, key_hostname])
+            print(f"Keys for user {user['name']}:")
+            print(key_table)
+            return
+    print(f"User with email {email} does not exist.")
 
 
 ###### testing code ###########
 
 config = load_config()
 
-print_user_table(config)
+user_print(config)
 
 ###actual test code###
 
-add_user_cli(config)
-user_add_key_cli(config)
 ###end of actual test code###
 
 config = load_config()
 
-print_user_table(config)
+user_print(config)
 
 graceFulExit()
 
