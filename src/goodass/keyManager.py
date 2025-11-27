@@ -92,8 +92,9 @@ def fix_keys_cli(
                 )
             )
             key_tables[f"{user}@{host}"] = key_table
-            print(f"Keys table for {user}@{host}...")
-            print_checked_keys_table(key_table)
+            if interactive:
+                print(f"Keys table for {user}@{host}...")
+                print_checked_keys_table(key_table)
     if interactive:
         confirmation = input("Result after fix, continue? [y/N]")
         if confirmation.lower() == "y":
