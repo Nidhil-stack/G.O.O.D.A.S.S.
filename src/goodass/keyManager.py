@@ -14,7 +14,7 @@ all_keys = []
 passwords = {}
 
 
-def print_keys_table_cli(pwds):
+def print_keys_table_cli(pwds, directory="./tempKeys"):
     """Fetch and display all SSH keys from configured hosts.
 
     This function retrieves SSH key data from the configuration using
@@ -23,7 +23,9 @@ def print_keys_table_cli(pwds):
     the user to press Enter before returning.
     """
 
-    servers, all_user_keys, all_keys, passwords = get_ssh_keys("config.yaml", pwds)
+    servers, all_user_keys, all_keys, passwords = get_ssh_keys(
+        "config.yaml", pwds, directory
+    )
     pwds.update(passwords)
     os.system("cls" if os.name == "nt" else "clear")
     print_keys_table(all_keys)
@@ -45,7 +47,9 @@ def fix_keys_cli(pwds, directory="./tempKeys"):
     returned from `get_ssh_keys`.
     """
 
-    servers, all_user_keys, all_keys, passwords = get_ssh_keys("config.yaml", pwds)
+    servers, all_user_keys, all_keys, passwords = get_ssh_keys(
+        "config.yaml", pwds, directory=directory
+    )
     pwds.update(passwords)
     checked_keys = check_keys(all_user_keys)
     # if all keys are status 0, then no issues
@@ -232,7 +236,7 @@ def create_ssh_file(hostname, key_data, directory="./tempKeys"):
     return key_path
 
 
-def get_ssh_keys(file_path, pwds={}):
+def get_ssh_keys(file_path, pwds={}, directory="./tempKeys"):
     """Retrieve SSH keys from all configured servers in the provided config file.
 
     Parameters:
@@ -256,7 +260,9 @@ def get_ssh_keys(file_path, pwds={}):
         for user in server["users"]:
             print(f"Fetching keys from {user}@{host}")
             thread = threading.Thread(
-                target=lambda: fetch_authorized_keys(host, user, console_lock, pwds)
+                target=lambda: fetch_authorized_keys(
+                    host, user, console_lock, pwds, directory=directory
+                )
             )
             threads.append(thread)
             thread.start()
@@ -316,7 +322,7 @@ def fetch_config(file_path):
     return servers, all_user_keys
 
 
-def fetch_authorized_keys(host, username, console_lock, pwds):
+def fetch_authorized_keys(host, username, console_lock, pwds, directory="./tempKeys"):
     """Connect to a remote host and fetch the `authorized_keys` for a user.
 
     Parameters:
@@ -329,6 +335,7 @@ def fetch_authorized_keys(host, username, console_lock, pwds):
     parses it with `parse_authorized_keys`, removes the temporary file and updates
     the module-level `all_keys` list with discovered keys.
     """
+    keys = []
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     try:
@@ -346,7 +353,9 @@ def fetch_authorized_keys(host, username, console_lock, pwds):
                         if pwd:
                             password = pwd
                         else:
-                            password = getpass.getpass(f"Password for {username}@{host}: ")
+                            password = getpass.getpass(
+                                f"Password for {username}@{host}: "
+                            )
                         passwords[f"{username}@{host}"] = password
                         client.connect(host, username=username, password=password)
                         break
@@ -368,20 +377,24 @@ def fetch_authorized_keys(host, username, console_lock, pwds):
         if username == "root":
             sftp.get(
                 "/root/.ssh/authorized_keys",
-                f"./tempKeys/authorized_keys_{host}_{username}",
+                os.path.join(directory, f"authorized_keys_{host}_{username}"),
             )
         else:
             sftp.get(
                 f"/home/{username}/.ssh/authorized_keys",
-                f"./tempKeys/authorized_keys_{host}_{username}",
+                os.path.join(directory, f"authorized_keys_{host}_{username}"),
             )
-        keys = parse_authorized_keys(f"./tempKeys/authorized_keys_{host}_{username}")
+        keys = parse_authorized_keys(
+            os.path.join(directory, f"authorized_keys_{host}_{username}")
+        )
     except Exception as e:
         if "No such file" in str(e):
             if console_lock:
                 console_lock.acquire()
             print(f"No authorized_keys file for {username}@{host}, skipping.")
-            open(f"./tempKeys/authorized_keys_{host}_{username}", "w").close()
+            open(
+                os.path.join(directory, f"authorized_keys_{host}_{username}"), "w"
+            ).close()
             if console_lock:
                 console_lock.release()
         else:
@@ -391,8 +404,8 @@ def fetch_authorized_keys(host, username, console_lock, pwds):
             sftp.close()
         client.close()
 
-    if os.path.exists(f"./tempKeys/authorized_keys_{host}_{username}"):
-        os.remove(f"./tempKeys/authorized_keys_{host}_{username}")
+    if os.path.exists(os.path.join(directory, f"authorized_keys_{host}_{username}")):
+        os.remove(os.path.join(directory, f"authorized_keys_{host}_{username}"))
     if not keys:
         return
     for key in keys:  # check if key already exists in all_keys
