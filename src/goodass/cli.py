@@ -137,25 +137,28 @@ def main():
         settings = {"ssh_private_key_path": ssh_private_key_path}
         with open(os.path.join(config_dir, "settings.yaml"), "w") as f:
             yaml.dump(settings, f)
-        with open(config_path, "r") as f:
-            config = yaml.safe_load(f)
-            config["users"].append(
-                {
-                    "username": "goodass_user",
-                    "keys": [
-                        {
-                            "type": public_key.split(" ")[0],
-                            "key": public_key.split(" ")[1],
-                            "hostname": "goodass_key@generated",
-                        }
-                    ],
-                }
-            )
+        settings = {"ssh_private_key_path": ssh_private_key_path}
+        with open(os.path.join(config_dir, "settings.yaml"), "w") as f:
+            yaml.dump(settings, f)
+        if not ssh_private_key_path.strip():
+            # Only generate keypair and add to config if no path was provided
+            _, public_key = generate_ssh_keypair(os.path.join(config_dir, "goodass_id_rsa"))
+            with open(config_path, "r") as f:
+                config = yaml.safe_load(f)
+                config["users"].append(
+                    {
+                        "username": "goodass_user",
+                        "keys": [
+                            {
+                                "type": public_key.split(" ")[0],
+                                "key": public_key.split(" ")[1],
+                                "hostname": "goodass_key@generated",
+                            }
+                        ],
+                    }
+                )
             with open(config_path, "w") as f:
                 yaml.dump(config, f)
-            with open(config_path, "w") as f:
-                yaml.dump(config, f)
-
     with open(os.path.join(config_dir, "settings.yaml"), "r") as f:
         settings = yaml.safe_load(f)
         ssh_private_key_path = settings.get("ssh_private_key_path", "")
