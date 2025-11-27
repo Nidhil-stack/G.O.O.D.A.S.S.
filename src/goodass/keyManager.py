@@ -14,7 +14,9 @@ all_keys = []
 passwords = {}
 
 
-def print_keys_table_cli(pwds):
+def print_keys_table_cli(
+    pwds, config_path, ssh_private_key_path, directory="./tempKeys"
+):
     """Fetch and display all SSH keys from configured hosts.
 
     This function retrieves SSH key data from the configuration using
@@ -23,14 +25,18 @@ def print_keys_table_cli(pwds):
     the user to press Enter before returning.
     """
 
-    servers, all_user_keys, all_keys, passwords = get_ssh_keys("config.yaml", pwds)
+    servers, all_user_keys, all_keys, passwords = get_ssh_keys(
+        config_path, ssh_private_key_path, pwds, directory
+    )
     pwds.update(passwords)
     os.system("cls" if os.name == "nt" else "clear")
     print_keys_table(all_keys)
     input("Press Enter to continue...")
 
 
-def fix_keys_cli(pwds, directory="./tempKeys"):
+def fix_keys_cli(
+    pwds, config_path, ssh_private_key_path, directory="./tempKeys", interactive=True
+):
     """Run a check-and-fix workflow for SSH keys.
 
     Steps performed:
@@ -45,24 +51,34 @@ def fix_keys_cli(pwds, directory="./tempKeys"):
     returned from `get_ssh_keys`.
     """
 
-    servers, all_user_keys, all_keys, passwords = get_ssh_keys("config.yaml", pwds)
+    servers, all_user_keys, all_keys, passwords = get_ssh_keys(
+        config_path,
+        ssh_private_key_path,
+        pwds,
+        directory=directory,
+        interactive=interactive,
+    )
     pwds.update(passwords)
     checked_keys = check_keys(all_user_keys)
     # if all keys are status 0, then no issues
-    os.system("cls" if os.name == "nt" else "clear")
-    print_checked_keys_table(checked_keys)
+    if interactive:
+        os.system("cls" if os.name == "nt" else "clear")
+        print_checked_keys_table(checked_keys)
     if all(key["status"] == 0 for key in checked_keys):
-        print("All servers are up to date, no issues found.")
-        input("Press Enter to continue...")
+        if interactive:
+            print("All servers are up to date, no issues found.")
+            input("Press Enter to continue...")
         return
-    print(
-        "Issues found with the above keys. Please check them then press Enter to continue."
-    )
+    if interactive:
+        print(
+            "Issues found with the above keys. Please check them then press Enter to continue."
+        )
     fixed_keys = list(filter(lambda k: k["status"] >= 0, checked_keys))
-    input("Press Enter to continue...")
-    os.system("cls" if os.name == "nt" else "clear")
-    print("Fixed Keys:")
-    print_checked_keys_table(list(fixed_keys))
+    if interactive:
+        input("Press Enter to continue...")
+        os.system("cls" if os.name == "nt" else "clear")
+        print("Fixed Keys:")
+        print_checked_keys_table(list(fixed_keys))
     key_tables = {}
     for server in servers:
         for user in server["users"]:
@@ -76,16 +92,42 @@ def fix_keys_cli(pwds, directory="./tempKeys"):
                 )
             )
             key_tables[f"{user}@{host}"] = key_table
-            print(f"Keys table for {user}@{host}...")
-            print_checked_keys_table(key_table)
-    confirmation = input("Result after fix, continue? [y/N]")
-    if confirmation.lower() == "y":
-        print("Fixing keys...")
-        upload_all_ssh_files(pwds, directory=directory, key_tables=key_tables)
-        input("All done! Press Enter to continue...")
+            if interactive:
+                print(f"Keys table for {user}@{host}...")
+                print_checked_keys_table(key_table)
+    if interactive:
+        confirmation = input("Result after fix, continue? [y/N]")
+        if confirmation.lower() == "y":
+            print("Fixing keys...")
+            upload_all_ssh_files(
+                pwds,
+                directory=directory,
+                ssh_private_key_path=ssh_private_key_path,
+                key_tables=key_tables,
+                config_path=config_path,
+                interactive=interactive,
+            )
+            input("All done! Press Enter to continue...")
+    else:
+        upload_all_ssh_files(
+            pwds,
+            directory=directory,
+            ssh_private_key_path=ssh_private_key_path,
+            key_tables=key_tables,
+            config_path=config_path,
+            interactive=interactive,
+        )
 
 
-def upload_all_ssh_files(pwds, key_tables, console_lock=None, directory="./tempKeys"):
+def upload_all_ssh_files(
+    pwds,
+    key_tables,
+    ssh_private_key_path,
+    console_lock=None,
+    directory="./tempKeys",
+    config_path="config.yaml",
+    interactive=True,
+):
     """Upload multiple `authorized_keys` files to their respective servers concurrently.
 
     Parameters:
@@ -99,7 +141,7 @@ def upload_all_ssh_files(pwds, key_tables, console_lock=None, directory="./tempK
     spawns a thread to upload it (using `upload_ssh_file`) and waits for all uploads to finish.
     """
     threads = []
-    servers, _ = fetch_config("config.yaml")
+    servers, _ = fetch_config(config_path)
     if console_lock is None:
         console_lock = threading.Lock()
     for server in servers:
@@ -113,8 +155,10 @@ def upload_all_ssh_files(pwds, key_tables, console_lock=None, directory="./tempK
                     host_user.split("@")[1],
                     host_user.split("@")[0],
                     pwds,
+                    ssh_private_key_path,
                     console_lock,
                     directory,
+                    interactive,
                 )
             )
             threads.append(thread)
@@ -123,7 +167,15 @@ def upload_all_ssh_files(pwds, key_tables, console_lock=None, directory="./tempK
         thread.join()
 
 
-def upload_ssh_file(host, username, pwds, console_lock=None, directory="./tempKeys"):
+def upload_ssh_file(
+    host,
+    username,
+    pwds,
+    ssh_private_key_path,
+    console_lock=None,
+    directory="./tempKeys",
+    interactive=True,
+):
     """Upload a single `authorized_keys` file to a remote user's `.ssh/authorized_keys`.
 
     Attempts key-based authentication first using a local key file (`./key.pem`). If that
@@ -143,15 +195,32 @@ def upload_ssh_file(host, username, pwds, console_lock=None, directory="./tempKe
     with open(
         os.path.join(directory, f"{username}@{host}.authorized_keys"), "r"
     ) as key_file:
-        print(f"Uploading keys to {username}@{host}")
+        if interactive:
+            print(f"Uploading keys to {username}@{host}")
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         try:
             client.connect(
-                host, username=username, password=None, key_filename="./key.pem"
+                host,
+                username=username,
+                password=None,
+                key_filename=ssh_private_key_path,
             )
         except Exception as e:
-            if "Authentication failed" in str(e):
+            if "Authentication failed" in str(e) and not interactive:
+                pwd = pwds.get(f"{username}@{host}")
+                if pwd:
+                    try:
+                        client.connect(host, username=username, password=pwd)
+                    except Exception as pwd_e:
+                        raise Exception(
+                            f"Authentication failed for {username}@{host} in non-interactive mode"
+                        ) from pwd_e
+                else:
+                    raise Exception(
+                        f"No password available for {username}@{host} in non-interactive mode"
+                    ) from e
+            elif "Authentication failed" in str(e):
                 if console_lock:
                     console_lock.acquire()
                 try:
@@ -198,9 +267,10 @@ def upload_ssh_file(host, username, pwds, console_lock=None, directory="./tempKe
             if console_lock:
                 console_lock.acquire()
             if "No such file" in str(e):
-                print(
-                    f"Remote .ssh directory does not exist for {username}@{host}. Upload failed."
-                )
+                if interactive:
+                    print(
+                        f"Remote .ssh directory does not exist for {username}@{host}. Upload failed."
+                    )
                 if console_lock:
                     console_lock.release()
             else:
@@ -232,7 +302,9 @@ def create_ssh_file(hostname, key_data, directory="./tempKeys"):
     return key_path
 
 
-def get_ssh_keys(file_path, pwds={}):
+def get_ssh_keys(
+    file_path, ssh_private_key_path, pwds={}, directory="./tempKeys", interactive=True
+):
     """Retrieve SSH keys from all configured servers in the provided config file.
 
     Parameters:
@@ -251,12 +323,25 @@ def get_ssh_keys(file_path, pwds={}):
     threads = []
     console_lock = threading.Lock()
     servers, all_user_keys = fetch_config(file_path)
+    if servers is None or len(servers) == 0:
+        if interactive:
+            print("No servers defined in the configuration file.")
+        return servers, all_user_keys, all_keys, passwords
     for server in servers:
         host = server["host"]
         for user in server["users"]:
-            print(f"Fetching keys from {user}@{host}")
+            if interactive:
+                print(f"Fetching keys from {user}@{host}")
             thread = threading.Thread(
-                target=lambda: fetch_authorized_keys(host, user, console_lock, pwds)
+                target=lambda: fetch_authorized_keys(
+                    host,
+                    user,
+                    console_lock,
+                    pwds,
+                    ssh_private_key_path=ssh_private_key_path,
+                    directory=directory,
+                    interactive=interactive,
+                )
             )
             threads.append(thread)
             thread.start()
@@ -316,7 +401,15 @@ def fetch_config(file_path):
     return servers, all_user_keys
 
 
-def fetch_authorized_keys(host, username, console_lock, pwds):
+def fetch_authorized_keys(
+    host,
+    username,
+    console_lock,
+    pwds,
+    ssh_private_key_path,
+    directory="./tempKeys",
+    interactive=True,
+):
     """Connect to a remote host and fetch the `authorized_keys` for a user.
 
     Parameters:
@@ -329,12 +422,28 @@ def fetch_authorized_keys(host, username, console_lock, pwds):
     parses it with `parse_authorized_keys`, removes the temporary file and updates
     the module-level `all_keys` list with discovered keys.
     """
+    keys = []
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     try:
-        client.connect(host, username=username, password=None, key_filename="./key.pem")
+        client.connect(
+            host, username=username, password=None, key_filename=ssh_private_key_path
+        )
     except Exception as e:
-        if "Authentication failed" in str(e):
+        if "Authentication failed" in str(e) and not interactive:
+            pwd = pwds.get(f"{username}@{host}")
+            if pwd:
+                try:
+                    client.connect(host, username=username, password=pwd)
+                except Exception as pwd_e:
+                    raise Exception(
+                        f"Authentication failed for {username}@{host} in non-interactive mode"
+                    ) from pwd_e
+            else:
+                raise Exception(
+                    f"No password available for {username}@{host} in non-interactive mode"
+                ) from e
+        elif "Authentication failed" in str(e):
             if console_lock:
                 console_lock.acquire()
             try:
@@ -346,7 +455,9 @@ def fetch_authorized_keys(host, username, console_lock, pwds):
                         if pwd:
                             password = pwd
                         else:
-                            password = getpass.getpass(f"Password for {username}@{host}: ")
+                            password = getpass.getpass(
+                                f"Password for {username}@{host}: "
+                            )
                         passwords[f"{username}@{host}"] = password
                         client.connect(host, username=username, password=password)
                         break
@@ -368,20 +479,25 @@ def fetch_authorized_keys(host, username, console_lock, pwds):
         if username == "root":
             sftp.get(
                 "/root/.ssh/authorized_keys",
-                f"./tempKeys/authorized_keys_{host}_{username}",
+                os.path.join(directory, f"authorized_keys_{host}_{username}"),
             )
         else:
             sftp.get(
                 f"/home/{username}/.ssh/authorized_keys",
-                f"./tempKeys/authorized_keys_{host}_{username}",
+                os.path.join(directory, f"authorized_keys_{host}_{username}"),
             )
-        keys = parse_authorized_keys(f"./tempKeys/authorized_keys_{host}_{username}")
+        keys = parse_authorized_keys(
+            os.path.join(directory, f"authorized_keys_{host}_{username}")
+        )
     except Exception as e:
         if "No such file" in str(e):
             if console_lock:
                 console_lock.acquire()
-            print(f"No authorized_keys file for {username}@{host}, skipping.")
-            open(f"./tempKeys/authorized_keys_{host}_{username}", "w").close()
+            if interactive:
+                print(f"No authorized_keys file for {username}@{host}, skipping.")
+            open(
+                os.path.join(directory, f"authorized_keys_{host}_{username}"), "w"
+            ).close()
             if console_lock:
                 console_lock.release()
         else:
@@ -391,8 +507,8 @@ def fetch_authorized_keys(host, username, console_lock, pwds):
             sftp.close()
         client.close()
 
-    if os.path.exists(f"./tempKeys/authorized_keys_{host}_{username}"):
-        os.remove(f"./tempKeys/authorized_keys_{host}_{username}")
+    if os.path.exists(os.path.join(directory, f"authorized_keys_{host}_{username}")):
+        os.remove(os.path.join(directory, f"authorized_keys_{host}_{username}"))
     if not keys:
         return
     for key in keys:  # check if key already exists in all_keys
