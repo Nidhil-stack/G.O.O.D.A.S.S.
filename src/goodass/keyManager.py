@@ -142,15 +142,16 @@ def upload_all_ssh_files(
     Thread concurrency per host can be limited via `max_threads_per_host` in the config file.
     """
     threads = []
-    servers, _, max_threads_per_host = fetch_config(config_path)
+    _, _, max_threads_per_host = fetch_config(config_path)
     if console_lock is None:
         console_lock = threading.Lock()
 
-    # Create a semaphore per host to limit concurrent threads if max_threads_per_host is set
+    # Create a semaphore per unique host from key_tables to limit concurrent threads
     host_semaphores = {}
     if max_threads_per_host is not None:
-        for server in servers:
-            host = server["host"]
+        # Extract unique hosts from key_tables
+        unique_hosts = set(host_user.split("@")[1] for host_user in key_tables.keys())
+        for host in unique_hosts:
             host_semaphores[host] = threading.Semaphore(max_threads_per_host)
 
     def upload_with_semaphore(host, username, pwds, ssh_private_key_path, console_lock, directory, interactive):
@@ -167,20 +168,18 @@ def upload_all_ssh_files(
                 console_lock, directory, interactive
             )
 
-    for server in servers:
-        host = server["host"]
-        for key_table in key_tables.items():
-            host_user = key_table[0]
-            keys = key_table[1]
-            create_ssh_file(host_user, keys, directory=directory)
-            upload_host = host_user.split("@")[1]
-            upload_user = host_user.split("@")[0]
-            thread = threading.Thread(
-                target=upload_with_semaphore,
-                args=(upload_host, upload_user, pwds, ssh_private_key_path, console_lock, directory, interactive)
-            )
-            threads.append(thread)
-            thread.start()
+    for key_table in key_tables.items():
+        host_user = key_table[0]
+        keys = key_table[1]
+        create_ssh_file(host_user, keys, directory=directory)
+        upload_host = host_user.split("@")[1]
+        upload_user = host_user.split("@")[0]
+        thread = threading.Thread(
+            target=upload_with_semaphore,
+            args=(upload_host, upload_user, pwds, ssh_private_key_path, console_lock, directory, interactive)
+        )
+        threads.append(thread)
+        thread.start()
     for thread in threads:
         thread.join()
 
@@ -406,8 +405,13 @@ def fetch_config(file_path):
 
     # Get max_threads_per_host setting; 0 or None means "no limit"
     max_threads_per_host = config.get("max_threads_per_host")
-    if max_threads_per_host == 0:
-        max_threads_per_host = None
+    if max_threads_per_host is not None:
+        if not isinstance(max_threads_per_host, int) or max_threads_per_host < 0:
+            raise ValueError(
+                f"max_threads_per_host must be None, 0, or a positive integer, got: {max_threads_per_host}"
+            )
+        if max_threads_per_host == 0:
+            max_threads_per_host = None
 
     for user in users:
         if user.get("keys") is None or len(user["keys"]) == 0:
