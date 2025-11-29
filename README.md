@@ -50,6 +50,17 @@ ssh_private_key_path: /absolute/path/to/your/key
 
 You can always **manually create or edit** this file, or provide a full configuration in the optional **`config.yaml`** file to bypass the initial wizard prompts.
 
+### 🔒 Thread Limiting (Optional)
+
+To prevent overwhelming SSH servers when managing many keys, you can limit the number of concurrent connections per host by adding the `max_threads_per_host` setting to your `ssh-config.yaml` file:
+
+```yaml
+max_threads_per_host: 5  # Limit to 5 concurrent connections per host
+```
+
+  * Set to a positive integer to limit concurrent threads per host
+  * Set to `0` or omit the setting entirely for **no limit** (default behavior)
+
 > **❗ Error Handling Note**
 > All program errors, warnings, and log messages are output to the terminal in **Interactive Mode**. If running in **Non-Interactive Mode** (e.g., using `--fix-keys`), these messages are **redirected and saved** in files within the same **configuration directory** (e.g., `~/.config/goodass/`). This is essential for debugging and reporting issues in automated runs.
 
@@ -132,7 +143,7 @@ You can now automatically run the key synchronization utility without any user p
 > Completion of the remaining items in this list will trigger the **Version 1.0.0** release.
 
   * Implement a **comprehensive logging system** to capture more than just errors, including operational details, warnings, and success messages.
-  * **Limit multi-threaded jobs against one host** to prevent unintentionally overwhelming the target server (e.g., avoiding a self-inflicted Distributed Denial of Service, or DDoS).
+  * ~~**Limit multi-threaded jobs against one host** to prevent unintentionally overwhelming the target server (e.g., avoiding a self-inflicted Distributed Denial of Service, or DDoS).~~ ✅ **Implemented** - Use the `max_threads_per_host` setting in `ssh-config.yaml`.
   * Add functionality to synchronize **`config.yaml`** with a remote server via **SFTP**, enabling configuration collaboration among multiple users.
 
 > **Future Goal: Version 2.0 Consideration**

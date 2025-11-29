@@ -139,27 +139,45 @@ def upload_all_ssh_files(
 
     The function creates a temporary `authorized_keys` file for each entry in `key_tables`,
     spawns a thread to upload it (using `upload_ssh_file`) and waits for all uploads to finish.
+    Thread concurrency per host can be limited via `max_threads_per_host` in the config file.
     """
     threads = []
-    servers, _ = fetch_config(config_path)
+    servers, _, max_threads_per_host = fetch_config(config_path)
     if console_lock is None:
         console_lock = threading.Lock()
+
+    # Create a semaphore per host to limit concurrent threads if max_threads_per_host is set
+    host_semaphores = {}
+    if max_threads_per_host is not None:
+        for server in servers:
+            host = server["host"]
+            host_semaphores[host] = threading.Semaphore(max_threads_per_host)
+
+    def upload_with_semaphore(host, username, pwds, ssh_private_key_path, console_lock, directory, interactive):
+        semaphore = host_semaphores.get(host)
+        if semaphore:
+            with semaphore:
+                upload_ssh_file(
+                    host, username, pwds, ssh_private_key_path,
+                    console_lock, directory, interactive
+                )
+        else:
+            upload_ssh_file(
+                host, username, pwds, ssh_private_key_path,
+                console_lock, directory, interactive
+            )
+
     for server in servers:
         host = server["host"]
         for key_table in key_tables.items():
             host_user = key_table[0]
             keys = key_table[1]
             create_ssh_file(host_user, keys, directory=directory)
+            upload_host = host_user.split("@")[1]
+            upload_user = host_user.split("@")[0]
             thread = threading.Thread(
-                target=lambda: upload_ssh_file(
-                    host_user.split("@")[1],
-                    host_user.split("@")[0],
-                    pwds,
-                    ssh_private_key_path,
-                    console_lock,
-                    directory,
-                    interactive,
-                )
+                target=upload_with_semaphore,
+                args=(upload_host, upload_user, pwds, ssh_private_key_path, console_lock, directory, interactive)
             )
             threads.append(thread)
             thread.start()
@@ -318,30 +336,48 @@ def get_ssh_keys(
     - passwords: dictionary of passwords entered during the fetch process
 
     The function spawns one thread per `user@host` and collects keys concurrently.
+    Thread concurrency per host can be limited via `max_threads_per_host` in the config file.
     """
     del all_keys[:]
     threads = []
     console_lock = threading.Lock()
-    servers, all_user_keys = fetch_config(file_path)
+    servers, all_user_keys, max_threads_per_host = fetch_config(file_path)
     if servers is None or len(servers) == 0:
         if interactive:
             print("No servers defined in the configuration file.")
         return servers, all_user_keys, all_keys, passwords
+
+    # Create a semaphore per host to limit concurrent threads if max_threads_per_host is set
+    host_semaphores = {}
+    if max_threads_per_host is not None:
+        for server in servers:
+            host = server["host"]
+            host_semaphores[host] = threading.Semaphore(max_threads_per_host)
+
+    def fetch_with_semaphore(host, user, console_lock, pwds, ssh_private_key_path, directory, interactive):
+        semaphore = host_semaphores.get(host)
+        if semaphore:
+            with semaphore:
+                fetch_authorized_keys(
+                    host, user, console_lock, pwds,
+                    ssh_private_key_path=ssh_private_key_path,
+                    directory=directory, interactive=interactive
+                )
+        else:
+            fetch_authorized_keys(
+                host, user, console_lock, pwds,
+                ssh_private_key_path=ssh_private_key_path,
+                directory=directory, interactive=interactive
+            )
+
     for server in servers:
         host = server["host"]
         for user in server["users"]:
             if interactive:
                 print(f"Fetching keys from {user}@{host}")
             thread = threading.Thread(
-                target=lambda: fetch_authorized_keys(
-                    host,
-                    user,
-                    console_lock,
-                    pwds,
-                    ssh_private_key_path=ssh_private_key_path,
-                    directory=directory,
-                    interactive=interactive,
-                )
+                target=fetch_with_semaphore,
+                args=(host, user, console_lock, pwds, ssh_private_key_path, directory, interactive)
             )
             threads.append(thread)
             thread.start()
@@ -360,12 +396,18 @@ def fetch_config(file_path):
     - servers (list): list of server definitions from the config.
     - all_user_keys (list): flattened list of key expectations; each entry contains
       `hostname`, `user`, `type`, `key`, `key_user`, and `email`.
+    - max_threads_per_host (int|None): maximum concurrent threads per host, or None for no limit.
     """
     all_user_keys = []
     with open(file_path, "r") as file:
         config = yaml.safe_load(file)
     servers = config.get("hosts") or config.get("servers")
     users = config["users"]
+
+    # Get max_threads_per_host setting; 0 or None means "no limit"
+    max_threads_per_host = config.get("max_threads_per_host")
+    if max_threads_per_host == 0:
+        max_threads_per_host = None
 
     for user in users:
         if user.get("keys") is None or len(user["keys"]) == 0:
@@ -398,7 +440,7 @@ def fetch_config(file_path):
                                 "email": user["email"],
                             }
                         )
-    return servers, all_user_keys
+    return servers, all_user_keys, max_threads_per_host
 
 
 def fetch_authorized_keys(
