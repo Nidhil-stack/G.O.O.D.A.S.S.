@@ -133,6 +133,9 @@ def upload_config_to_server(config_path, server, ssh_private_key_path):
     
     try:
         client = paramiko.SSHClient()
+        # Note: AutoAddPolicy is used for usability with multiple servers.
+        # This is consistent with the project's keyManager.py approach.
+        # For high-security environments, consider implementing host key verification.
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(
             host,
@@ -192,6 +195,9 @@ def download_config_from_server(config_path, server, ssh_private_key_path):
     
     try:
         client = paramiko.SSHClient()
+        # Note: AutoAddPolicy is used for usability with multiple servers.
+        # This is consistent with the project's keyManager.py approach.
+        # For high-security environments, consider implementing host key verification.
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(
             host,
