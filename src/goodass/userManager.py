@@ -2,6 +2,11 @@ import yaml
 import prettytable
 import os
 
+if __package__ is None or __package__ == "":
+    import autocomplete
+else:
+    from . import autocomplete
+
 
 def user_print(config=None):
     """Prints a table of users with their emails and associated keys.
@@ -105,6 +110,23 @@ def save_config(config, path="config.yaml"):
         exit(1)
 
 
+def get_user_email_completions(config):
+    """Get list of user emails for autocomplete.
+
+    Parameters:
+    - config (dict): Configuration dictionary containing user data.
+
+    Returns:
+    - list: List of user emails.
+    """
+    emails = []
+    for user in config.get("users", []):
+        email = user.get("email", "")
+        if email:
+            emails.append(email)
+    return emails
+
+
 def user_add_cli(config="config.yaml"):
     """CLI for adding a new user.
     Parameters:
@@ -172,7 +194,10 @@ def user_add_key_cli(config="config.yaml", email=None):
     os.system("cls" if os.name == "nt" else "clear")
     user_print(config)
     if email is None:
-        email = input("Insert user email to add key: ")
+        email_completions = get_user_email_completions(config)
+        email = autocomplete.input_with_list_completion(
+            "Insert user email to add key (Tab for completion): ", email_completions
+        )
     users = config.get("users", [])
     user_exists = False
     for user in users:
@@ -244,7 +269,10 @@ def user_remove_key_cli(config="config.yaml", email=None):
     os.system("cls" if os.name == "nt" else "clear")
     if email is None:
         user_print(config)
-        email = input("Insert user email to remove key: ")
+        email_completions = get_user_email_completions(config)
+        email = autocomplete.input_with_list_completion(
+            "Insert user email to remove key (Tab for completion): ", email_completions
+        )
         os.system("cls" if os.name == "nt" else "clear")
     users = config.get("users", [])
     user_exists = False
@@ -342,7 +370,10 @@ def user_remove_cli(config="config.yaml", email=None):
         config = load_config(config)
     if email is None:
         user_print(config)
-        email = input("Insert user email to remove: ")
+        email_completions = get_user_email_completions(config)
+        email = autocomplete.input_with_list_completion(
+            "Insert user email to remove (Tab for completion): ", email_completions
+        )
         os.system("cls" if os.name == "nt" else "clear")
     users = config.get("users", [])
     user_exists = False
@@ -376,7 +407,7 @@ def user_key_access_print(config, email, key_value):
         input("Press Enter to continue...")
         return
     for user in users:
-        if user("email", "") == email:
+        if user.get("email", "") == email:
             keys = user.get("keys", [])
             if not keys:
                 print(f"No keys found for user {user.get('email', '')}.")
@@ -452,6 +483,40 @@ def user_key_access_remove(config, email, key_value, access):
     return config
 
 
+def get_key_access_remove_completions(config, email, key_value):
+    """Get list of completions for removing key access permissions.
+
+    Returns a list of 'remove username@host' options for the specified key.
+
+    Parameters:
+    - config (dict): Configuration dictionary containing user data.
+    - email (str): Email of the user whose key access is being managed.
+    - key_value (str): SSH key string whose access permissions are being managed.
+
+    Returns:
+    - list: List of completion options for removal.
+    """
+    completions = ["add", "remove", "rm", "back", "done", "q"]
+
+    users = config.get("users", [])
+    for user in users:
+        if user.get("email", "") == email:
+            keys = user.get("keys", [])
+            for existing_key in keys:
+                if existing_key["key"] == key_value:
+                    access_list = existing_key.get("access", [])
+                    for perm in access_list:
+                        username = perm.get("username", "")
+                        host = perm.get("host", "")
+                        if username and host:
+                            completions.append(f"remove {username}@{host}")
+                            completions.append(f"rm {username}@{host}")
+                    break
+            break
+
+    return completions
+
+
 def user_key_access_cli(config="config.yaml", email=None):
     """CLI for managing key access permissions for a user.
     Parameters:
@@ -466,7 +531,11 @@ def user_key_access_cli(config="config.yaml", email=None):
     os.system("cls" if os.name == "nt" else "clear")
     if email is None:
         user_print(config)
-        email = input("Insert user email to manage key access: ")
+        email_completions = get_user_email_completions(config)
+        email = autocomplete.input_with_list_completion(
+            "Insert user email to manage key access (Tab for completion): ",
+            email_completions,
+        )
         os.system("cls" if os.name == "nt" else "clear")
     users = config.get("users", [])
     user_exists = False
@@ -507,8 +576,16 @@ def user_key_access_cli(config="config.yaml", email=None):
         while True:
             os.system("cls" if os.name == "nt" else "clear")
             user_key_access_print(config, email, key_value)
-            user_input = input(
-                "Type 'add' to add access, 'remove' to remove access, followed by the access you intend to edit in the format username@host (type 'back' or 'done' to finish): \n"
+            # Get completions for removal (only for existing access entries)
+            access_completions = get_key_access_remove_completions(
+                config, email, key_value
+            )
+            user_input = autocomplete.input_with_list_completion(
+                "Type 'add' to add access, 'remove' to remove access, followed by the\n"
+                "access you intend to edit in the format username@host\n"
+                "(type 'back' or 'done' to finish, Tab for removal completion): ",
+                access_completions,
+                allow_spaces=True,  # Allow completion of "remove user@host" with spaces
             ).strip()
             if (
                 user_input.lower() == "done"

@@ -41,6 +41,10 @@ def main():
     else:
         non_interactive = False
     directory = tempfile.mkdtemp(prefix="goodass-")
+    
+    # Set directory reference in utils module for cleanup
+    utils.directory = directory
+    
     if not os.path.exists(directory):
         os.makedirs(directory)
     pwds = {}
