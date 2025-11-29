@@ -31,6 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend as crypto_default_backend
 
 directory = None
+stderr_file = None
 
 
 def signal_handler(sig, frame):
@@ -40,6 +41,12 @@ def signal_handler(sig, frame):
 
 def exit_gracefully():
     """Cleans up temporary files and exits the program."""
+    global stderr_file
+    if stderr_file is not None:
+        try:
+            stderr_file.close()
+        except Exception:
+            pass
     if directory is not None and os.path.exists(directory):
         for filename in os.listdir(directory):
             file_path = os.path.join(directory, filename)
@@ -82,8 +89,6 @@ def non_interactive_fix_keys(
     pwds, config_dir, config_path, ssh_private_key_path, directory
 ):
     """Non-interactive function to fix SSH keys."""
-    err_log_path = os.path.join(config_dir, "goodass_error_log.txt")
-    sys.stderr = open(err_log_path, "w")
     keyManager.fix_keys_cli(
         pwds,
         config_path,
@@ -142,7 +147,9 @@ def main():
             yaml.dump(settings, f)
         if not ssh_private_key_path.strip():
             # Only generate keypair and add to config if no path was provided
-            _, public_key = generate_ssh_keypair(os.path.join(config_dir, "goodass_id_rsa"))
+            _, public_key = generate_ssh_keypair(
+                os.path.join(config_dir, "goodass_id_rsa")
+            )
             with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
                 config["users"].append(
@@ -162,6 +169,7 @@ def main():
     with open(os.path.join(config_dir, "settings.yaml"), "r") as f:
         settings = yaml.safe_load(f)
         ssh_private_key_path = settings.get("ssh_private_key_path", "")
+        verbosity = settings.get("verbosity", "INFO")
 
     if os.path.exists(os.path.join(config_dir, "passwords.yaml")):
         with open(os.path.join(config_dir, "passwords.yaml"), "r") as f:
@@ -176,6 +184,12 @@ def main():
         print(pwds)
 
     signal.signal(signal.SIGINT, signal_handler)
+
+    if verbosity != "DEBUG":
+        global stderr_file
+        err_log_path = os.path.join(config_dir, "goodass_error_log.txt")
+        stderr_file = open(err_log_path, "w")
+        sys.stderr = stderr_file
 
     if non_interactive:
         non_interactive_fix_keys(

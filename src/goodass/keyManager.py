@@ -242,11 +242,13 @@ def upload_ssh_file(
                                 attempts += 1
                                 print("Authentication failed, please try again.")
                             else:
+                                print("Upload failed for", f"{username}@{host}")
                                 raise e
                 finally:
                     if console_lock and console_lock.locked():
                         console_lock.release()
             else:
+                print("Upload failed for", f"{username}@{host}")
                 raise e
         if console_lock and console_lock.locked():
             console_lock.release()
@@ -276,6 +278,7 @@ def upload_ssh_file(
             else:
                 if console_lock and console_lock.locked():
                     console_lock.release()
+                print("Upload failed for", f"{username}@{host}")
                 raise e
         finally:
             if sftp:
@@ -472,6 +475,7 @@ def fetch_authorized_keys(
                 if console_lock:
                     console_lock.release()
         else:
+            print(f"Fetch failed for {username}@{host}")
             raise e
     sftp = client.open_sftp()
     try:
@@ -501,6 +505,7 @@ def fetch_authorized_keys(
             if console_lock:
                 console_lock.release()
         else:
+            print(f"Fetch failed for {username}@{host}")
             raise e
     finally:
         if sftp:
