@@ -2,6 +2,11 @@ import yaml
 import prettytable
 import os
 
+if __package__ is None:
+    import autocomplete
+else:
+    from . import autocomplete
+
 
 def user_print(config=None):
     """Prints a table of users with their emails and associated keys.
@@ -105,6 +110,23 @@ def save_config(config, path="config.yaml"):
         exit(1)
 
 
+def get_user_email_completions(config):
+    """Get list of user emails for autocomplete.
+    
+    Parameters:
+    - config (dict): Configuration dictionary containing user data.
+    
+    Returns:
+    - list: List of user emails.
+    """
+    emails = []
+    for user in config.get("users", []):
+        email = user.get("email", "")
+        if email:
+            emails.append(email)
+    return emails
+
+
 def user_add_cli(config="config.yaml"):
     """CLI for adding a new user.
     Parameters:
@@ -172,7 +194,10 @@ def user_add_key_cli(config="config.yaml", email=None):
     os.system("cls" if os.name == "nt" else "clear")
     user_print(config)
     if email is None:
-        email = input("Insert user email to add key: ")
+        email_completions = get_user_email_completions(config)
+        email = autocomplete.input_with_list_completion(
+            "Insert user email to add key (Tab for completion): ", email_completions
+        )
     users = config.get("users", [])
     user_exists = False
     for user in users:
@@ -244,7 +269,10 @@ def user_remove_key_cli(config="config.yaml", email=None):
     os.system("cls" if os.name == "nt" else "clear")
     if email is None:
         user_print(config)
-        email = input("Insert user email to remove key: ")
+        email_completions = get_user_email_completions(config)
+        email = autocomplete.input_with_list_completion(
+            "Insert user email to remove key (Tab for completion): ", email_completions
+        )
         os.system("cls" if os.name == "nt" else "clear")
     users = config.get("users", [])
     user_exists = False
@@ -342,7 +370,10 @@ def user_remove_cli(config="config.yaml", email=None):
         config = load_config(config)
     if email is None:
         user_print(config)
-        email = input("Insert user email to remove: ")
+        email_completions = get_user_email_completions(config)
+        email = autocomplete.input_with_list_completion(
+            "Insert user email to remove (Tab for completion): ", email_completions
+        )
         os.system("cls" if os.name == "nt" else "clear")
     users = config.get("users", [])
     user_exists = False
@@ -466,7 +497,10 @@ def user_key_access_cli(config="config.yaml", email=None):
     os.system("cls" if os.name == "nt" else "clear")
     if email is None:
         user_print(config)
-        email = input("Insert user email to manage key access: ")
+        email_completions = get_user_email_completions(config)
+        email = autocomplete.input_with_list_completion(
+            "Insert user email to manage key access (Tab for completion): ", email_completions
+        )
         os.system("cls" if os.name == "nt" else "clear")
     users = config.get("users", [])
     user_exists = False

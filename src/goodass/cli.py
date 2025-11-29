@@ -18,10 +18,12 @@ if __package__ is None:
     import keyManager
     import userManager
     import hostManager
+    import autocomplete
 else:
     from . import keyManager
     from . import userManager
     from . import hostManager
+    from . import autocomplete
 from pathlib import Path
 import yaml
 import signal
@@ -161,8 +163,9 @@ def edit_ssh_private_key_path(settings, config_dir, config_path):
     print(f"Current value: {current_value if current_value else '(not set)'}")
     print("\nEnter new path to SSH private key.")
     print("Leave blank to generate a new keypair in the config directory.")
+    print("(Use Tab for path completion)")
     
-    new_path = input("\nNew path (or blank to generate): ").strip()
+    new_path = autocomplete.input_with_path_completion("\nNew path (or blank to generate): ").strip()
     
     if not new_path:
         # Generate new keypair

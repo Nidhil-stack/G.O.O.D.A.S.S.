@@ -2,6 +2,11 @@ import os
 import yaml
 import prettytable
 
+if __package__ is None:
+    import autocomplete
+else:
+    from . import autocomplete
+
 
 def load_config(path="config.yaml"):
     """Loads the configuration from a YAML file.
@@ -130,6 +135,36 @@ def hosts_remove(config, host, user=None):
     return config
 
 
+def get_host_completions(config):
+    """Get list of completions for host management.
+    
+    Returns a list of all user@host combinations and hosts from config,
+    prefixed with 'add' and 'remove' commands for tab completion.
+    
+    Parameters:
+    - config (dict): Configuration dictionary containing hosts.
+    
+    Returns:
+    - list: List of completion options.
+    """
+    completions = ['add', 'remove', 'rm', 'back', 'done', 'q']
+    
+    for host_entry in config.get("hosts", []):
+        host = host_entry.get("host", "")
+        if host:
+            # Add just the host
+            completions.append(f"add {host}")
+            completions.append(f"remove {host}")
+            completions.append(f"rm {host}")
+            # Add user@host combinations
+            for user in host_entry.get("users", []):
+                completions.append(f"add {user}@{host}")
+                completions.append(f"remove {user}@{host}")
+                completions.append(f"rm {user}@{host}")
+    
+    return completions
+
+
 def host_cli(config="config.yaml"):
     """
     CLI for managing hosts in the configuration.
@@ -144,8 +179,11 @@ def host_cli(config="config.yaml"):
     while True:
         os.system("cls" if os.name == "nt" else "clear")
         hosts_print(config)
-        user_input = input(
-            "Type 'add' to add host, 'remove' to remove host, followed by the host you intend to edit in the format username@host (type 'back', 'done' or 'q' to finish): \n"
+        # Get completions for autocomplete
+        completions = get_host_completions(config)
+        user_input = autocomplete.input_with_list_completion(
+            "Type 'add' to add host, 'remove' to remove host, followed by the host you intend to edit in the format username@host (type 'back', 'done' or 'q' to finish): \n(Use Tab for completion)\n",
+            completions
         ).strip()
         if user_input.lower() in ["back", "done", "q"]:
             return
