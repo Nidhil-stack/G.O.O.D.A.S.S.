@@ -82,8 +82,6 @@ def non_interactive_fix_keys(
     pwds, config_dir, config_path, ssh_private_key_path, directory
 ):
     """Non-interactive function to fix SSH keys."""
-    err_log_path = os.path.join(config_dir, "goodass_error_log.txt")
-    sys.stderr = open(err_log_path, "w")
     keyManager.fix_keys_cli(
         pwds,
         config_path,
@@ -142,7 +140,9 @@ def main():
             yaml.dump(settings, f)
         if not ssh_private_key_path.strip():
             # Only generate keypair and add to config if no path was provided
-            _, public_key = generate_ssh_keypair(os.path.join(config_dir, "goodass_id_rsa"))
+            _, public_key = generate_ssh_keypair(
+                os.path.join(config_dir, "goodass_id_rsa")
+            )
             with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
                 config["users"].append(
@@ -162,6 +162,7 @@ def main():
     with open(os.path.join(config_dir, "settings.yaml"), "r") as f:
         settings = yaml.safe_load(f)
         ssh_private_key_path = settings.get("ssh_private_key_path", "")
+        verbosity = settings.get("verbosity", "INFO")
 
     if os.path.exists(os.path.join(config_dir, "passwords.yaml")):
         with open(os.path.join(config_dir, "passwords.yaml"), "r") as f:
@@ -176,6 +177,10 @@ def main():
         print(pwds)
 
     signal.signal(signal.SIGINT, signal_handler)
+
+    if verbosity != "DEBUG":
+        err_log_path = os.path.join(config_dir, "goodass_error_log.txt")
+        sys.stderr = open(err_log_path, "w")
 
     if non_interactive:
         non_interactive_fix_keys(
