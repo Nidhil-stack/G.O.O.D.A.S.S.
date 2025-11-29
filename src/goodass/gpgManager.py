@@ -1,13 +1,16 @@
 """GPG encryption management for goodass CLI.
 
 This module provides functions for managing GPG keys and encrypting/decrypting
-the ssh-config.yaml file using GPG encryption.
+the ssh-config.yaml file using GPG encryption. Includes signing and verification
+to protect against injection vulnerabilities.
 """
 
 import os
 import yaml
 import gnupg
-import tempfile
+
+# Constants for fingerprint display
+FINGERPRINT_DISPLAY_LENGTH = 16
 
 if __package__ is None:
     import autocomplete
@@ -197,6 +200,211 @@ def decrypt_config(encrypted_path, output_path=None, passphrase=None, gpg_home=N
         return False
 
 
+def sign_config(config_path, key_fingerprint=None, passphrase=None, gpg_home=None):
+    """Sign the ssh-config.yaml file with GPG private key.
+    
+    Signs the file to ensure integrity and authenticity. The signature
+    can be verified against the configured public keys.
+    
+    Parameters:
+    - config_path (str): Path to the ssh-config.yaml file.
+    - key_fingerprint (str): Fingerprint of the key to sign with (default: default key).
+    - passphrase (str): Passphrase for the GPG private key.
+    - gpg_home (str): Path to the GPG home directory.
+    
+    Returns:
+    - bool: True if successful, False otherwise.
+    """
+    gpg = get_gpg(gpg_home)
+    
+    with open(config_path, "rb") as f:
+        data = f.read()
+    
+    # Create detached signature
+    signed = gpg.sign(
+        data,
+        keyid=key_fingerprint,
+        passphrase=passphrase,
+        detach=True,
+        armor=True
+    )
+    
+    if signed.data:
+        sig_path = config_path + ".sig"
+        with open(sig_path, "wb") as f:
+            f.write(signed.data)
+        print(f"Config signed. Signature saved to {sig_path}")
+        return True
+    else:
+        print(f"Signing failed: {signed.status}")
+        return False
+
+
+def verify_config_signature(config_path, trusted_fingerprints, gpg_home=None):
+    """Verify the signature of ssh-config.yaml against trusted public keys.
+    
+    This function checks that the file was signed by one of the trusted keys,
+    protecting against injection attacks where a malicious file could be
+    substituted.
+    
+    Parameters:
+    - config_path (str): Path to the ssh-config.yaml file.
+    - trusted_fingerprints (list): List of trusted GPG key fingerprints.
+    - gpg_home (str): Path to the GPG home directory.
+    
+    Returns:
+    - tuple: (is_valid, signer_fingerprint) - is_valid is True if signature is valid
+             and from a trusted key, signer_fingerprint is the fingerprint of the signer.
+    """
+    sig_path = config_path + ".sig"
+    
+    if not os.path.exists(sig_path):
+        print(f"Signature file not found: {sig_path}")
+        return False, None
+    
+    if not os.path.exists(config_path):
+        print(f"Config file not found: {config_path}")
+        return False, None
+    
+    gpg = get_gpg(gpg_home)
+    
+    with open(sig_path, "rb") as f:
+        sig_data = f.read()
+    
+    # Verify the detached signature
+    verified = gpg.verify_file(open(config_path, "rb"), sig_path)
+    
+    if not verified.valid:
+        print(f"Signature verification failed: {verified.status}")
+        return False, None
+    
+    signer_fingerprint = verified.fingerprint
+    
+    # Check if the signer is in the trusted list
+    if trusted_fingerprints:
+        is_trusted = any(
+            signer_fingerprint.endswith(fp) or fp.endswith(signer_fingerprint)
+            for fp in trusted_fingerprints
+        )
+        if not is_trusted:
+            print(f"Warning: Signature is valid but signer ({signer_fingerprint}) is not in trusted keys.")
+            return False, signer_fingerprint
+    
+    print(f"Signature verified. Signed by: {signer_fingerprint}")
+    return True, signer_fingerprint
+
+
+def sign_and_encrypt_config(config_path, encrypt_fingerprints, sign_fingerprint=None, 
+                            passphrase=None, gpg_home=None):
+    """Sign and then encrypt the config file.
+    
+    This provides both integrity (signature) and confidentiality (encryption).
+    The file is first signed, then the original file and signature are encrypted.
+    
+    Parameters:
+    - config_path (str): Path to the ssh-config.yaml file.
+    - encrypt_fingerprints (list): List of GPG key fingerprints to encrypt for.
+    - sign_fingerprint (str): Fingerprint of the key to sign with.
+    - passphrase (str): Passphrase for the GPG private key.
+    - gpg_home (str): Path to the GPG home directory.
+    
+    Returns:
+    - bool: True if successful, False otherwise.
+    """
+    if not encrypt_fingerprints:
+        print("No GPG keys configured for encryption.")
+        return False
+    
+    gpg = get_gpg(gpg_home)
+    
+    with open(config_path, "r") as f:
+        data = f.read()
+    
+    # Sign and encrypt in one operation
+    encrypted = gpg.encrypt(
+        data,
+        encrypt_fingerprints,
+        sign=sign_fingerprint,
+        passphrase=passphrase,
+        armor=True
+    )
+    
+    if encrypted.ok:
+        encrypted_path = config_path + ".gpg"
+        with open(encrypted_path, "w") as f:
+            f.write(str(encrypted))
+        print(f"Config signed and encrypted to {encrypted_path}")
+        return True
+    else:
+        print(f"Sign and encrypt failed: {encrypted.status}")
+        return False
+
+
+def decrypt_and_verify_config(encrypted_path, trusted_fingerprints, output_path=None, 
+                              passphrase=None, gpg_home=None):
+    """Decrypt and verify the signature of the config file.
+    
+    This ensures both confidentiality and integrity by decrypting the file
+    and verifying that it was signed by a trusted key.
+    
+    Parameters:
+    - encrypted_path (str): Path to the encrypted file.
+    - trusted_fingerprints (list): List of trusted GPG key fingerprints.
+    - output_path (str): Path to save the decrypted file.
+    - passphrase (str): Passphrase for the GPG private key.
+    - gpg_home (str): Path to the GPG home directory.
+    
+    Returns:
+    - tuple: (success, signer_fingerprint) - success is True if decryption and
+             verification succeeded, signer_fingerprint is who signed it.
+    """
+    if output_path is None:
+        if encrypted_path.endswith(".gpg"):
+            output_path = encrypted_path[:-4]
+        else:
+            output_path = encrypted_path + ".decrypted"
+    
+    gpg = get_gpg(gpg_home)
+    
+    with open(encrypted_path, "r") as f:
+        encrypted_data = f.read()
+    
+    decrypted = gpg.decrypt(encrypted_data, passphrase=passphrase)
+    
+    if not decrypted.ok:
+        print(f"Decryption failed: {decrypted.status}")
+        return False, None
+    
+    # Check signature if present
+    signer_fingerprint = decrypted.fingerprint if hasattr(decrypted, 'fingerprint') else None
+    
+    if signer_fingerprint:
+        # Verify signer is trusted
+        if trusted_fingerprints:
+            is_trusted = any(
+                signer_fingerprint.endswith(fp) or fp.endswith(signer_fingerprint)
+                for fp in trusted_fingerprints
+            )
+            if not is_trusted:
+                print(f"Warning: File was signed by untrusted key: {signer_fingerprint}")
+                confirm = input("Continue anyway? (y/N): ").strip().lower()
+                if confirm != "y":
+                    return False, signer_fingerprint
+        print(f"Signature verified. Signed by: {signer_fingerprint}")
+    else:
+        print("Warning: File was not signed.")
+        if trusted_fingerprints:
+            confirm = input("Continue with unsigned file? (y/N): ").strip().lower()
+            if confirm != "y":
+                return False, None
+    
+    with open(output_path, "w") as f:
+        f.write(str(decrypted))
+    
+    print(f"Config decrypted to {output_path}")
+    return True, signer_fingerprint
+
+
 def list_available_keys(gpg_home=None):
     """List available GPG keys in the system.
     
@@ -208,6 +416,20 @@ def list_available_keys(gpg_home=None):
     """
     gpg = get_gpg(gpg_home)
     keys = gpg.list_keys()
+    return keys
+
+
+def list_secret_keys(gpg_home=None):
+    """List available GPG secret (private) keys in the system.
+    
+    Parameters:
+    - gpg_home (str): Path to the GPG home directory.
+    
+    Returns:
+    - list: List of available secret keys.
+    """
+    gpg = get_gpg(gpg_home)
+    keys = gpg.list_keys(secret=True)
     return keys
 
 
@@ -225,7 +447,7 @@ def get_key_completions(config):
     for key in config.get("gpg_public_keys", []):
         fingerprint = key.get("fingerprint", "")
         if fingerprint:
-            short_fp = fingerprint[-16:] if len(fingerprint) > 16 else fingerprint
+            short_fp = fingerprint[-FINGERPRINT_DISPLAY_LENGTH:] if len(fingerprint) > FINGERPRINT_DISPLAY_LENGTH else fingerprint
             completions.append(f"remove {short_fp}")
             completions.append(f"rm {short_fp}")
     
@@ -242,7 +464,7 @@ def gpg_keys_print(config):
     
     keys = config.get("gpg_public_keys", [])
     table = prettytable.PrettyTable()
-    table.field_names = ["#", "Key ID", "Fingerprint (last 16)", "Email", "Name"]
+    table.field_names = ["#", "Key ID", f"Fingerprint (last {FINGERPRINT_DISPLAY_LENGTH})", "Email", "Name"]
     
     if not keys:
         print("No GPG public keys configured.")
@@ -250,7 +472,7 @@ def gpg_keys_print(config):
     
     for i, key in enumerate(keys, 1):
         fingerprint = key.get("fingerprint", "N/A")
-        short_fp = fingerprint[-16:] if len(fingerprint) > 16 else fingerprint
+        short_fp = fingerprint[-FINGERPRINT_DISPLAY_LENGTH:] if len(fingerprint) > FINGERPRINT_DISPLAY_LENGTH else fingerprint
         table.add_row([
             i,
             key.get("key_id", "N/A"),
@@ -281,10 +503,12 @@ GPG Key Management Menu:
     2. Add GPG Public Key (import from file)
     3. Remove GPG Public Key
     4. List Available Keys in Keyring
-    5. Encrypt Config File
-    6. Decrypt Config File
+    5. Sign & Encrypt Config File
+    6. Decrypt & Verify Config File
+    7. Sign Config File Only
+    8. Verify Config Signature
 
-    7. Back to Main Menu
+    9. Back to Main Menu
     """
     
     while True:
@@ -303,10 +527,14 @@ GPG Key Management Menu:
         elif option == "4":
             list_keyring_cli(gpg_home)
         elif option == "5":
-            encrypt_config_cli(config, config_path, gpg_home)
+            sign_and_encrypt_config_cli(config, config_path, gpg_home)
         elif option == "6":
-            decrypt_config_cli(config_path, gpg_home)
-        elif option == "7" or option.lower() in ["back", "done", "q"]:
+            decrypt_and_verify_config_cli(config, config_path, gpg_home)
+        elif option == "7":
+            sign_config_cli(config_path, gpg_home)
+        elif option == "8":
+            verify_config_cli(config, config_path, gpg_home)
+        elif option == "9" or option.lower() in ["back", "done", "q"]:
             return
         else:
             print("Invalid option selected.")
@@ -555,3 +783,217 @@ def decrypt_config_cli(config_path, gpg_home=None):
     
     decrypt_config(encrypted_path, config_path, passphrase, gpg_home)
     input("Press Enter to continue...")
+
+
+def sign_and_encrypt_config_cli(config, config_path, gpg_home=None):
+    """CLI for signing and encrypting the config file.
+    
+    This provides both integrity (signature) and confidentiality (encryption).
+    
+    Parameters:
+    - config (dict): Configuration dictionary.
+    - config_path (str): Path to the ssh-config.yaml file.
+    - gpg_home (str): Path to the GPG home directory.
+    """
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=== Sign & Encrypt Config File ===\n")
+    
+    keys = config.get("gpg_public_keys", [])
+    if not keys:
+        print("No GPG public keys configured. Add keys first.")
+        input("Press Enter to continue...")
+        return
+    
+    gpg_keys_print(config)
+    
+    # Get encryption fingerprints
+    fingerprints = [k.get("fingerprint") for k in keys if k.get("fingerprint")]
+    
+    # Let user select signing key
+    secret_keys = list_secret_keys(gpg_home)
+    if not secret_keys:
+        print("\nNo private keys found in keyring. Cannot sign.")
+        input("Press Enter to continue...")
+        return
+    
+    print("\n=== Select Signing Key ===")
+    print("Available private keys:")
+    for i, key in enumerate(secret_keys, 1):
+        uids = key.get("uids", ["Unknown"])
+        print(f"  {i}. {key.get('keyid', 'N/A')} - {uids[0] if uids else 'N/A'}")
+    
+    sign_fingerprint = None
+    try:
+        choice = int(input("\nEnter key number to sign with (or 0 for default): ").strip())
+        if 1 <= choice <= len(secret_keys):
+            sign_fingerprint = secret_keys[choice - 1].get("fingerprint")
+    except ValueError:
+        pass
+    
+    print(f"\nThe config will be signed and encrypted for {len(fingerprints)} key(s).")
+    confirm = input("Proceed? (y/N): ").strip().lower()
+    
+    if confirm == "y":
+        import getpass
+        passphrase = getpass.getpass("Enter GPG passphrase for signing key (or blank if using agent): ")
+        passphrase = passphrase if passphrase else None
+        
+        sign_and_encrypt_config(config_path, fingerprints, sign_fingerprint, passphrase, gpg_home)
+    
+    input("Press Enter to continue...")
+
+
+def decrypt_and_verify_config_cli(config, config_path, gpg_home=None):
+    """CLI for decrypting and verifying the config file signature.
+    
+    Parameters:
+    - config (dict): Configuration dictionary.
+    - config_path (str): Path to the ssh-config.yaml file.
+    - gpg_home (str): Path to the GPG home directory.
+    """
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=== Decrypt & Verify Config File ===\n")
+    
+    encrypted_path = config_path + ".gpg"
+    if not os.path.exists(encrypted_path):
+        encrypted_path = autocomplete.input_with_path_completion(
+            "Enter path to encrypted file (Tab for completion): "
+        ).strip()
+    
+    if not os.path.exists(encrypted_path):
+        print("Encrypted file not found.")
+        input("Press Enter to continue...")
+        return
+    
+    # Get trusted fingerprints from config
+    trusted_fingerprints = [
+        k.get("fingerprint") for k in config.get("gpg_public_keys", []) 
+        if k.get("fingerprint")
+    ]
+    
+    if trusted_fingerprints:
+        print(f"Will verify signature against {len(trusted_fingerprints)} trusted key(s).")
+    else:
+        print("Warning: No trusted keys configured. Signature verification will be skipped.")
+    
+    import getpass
+    passphrase = getpass.getpass("\nEnter GPG passphrase (or leave blank if using agent): ")
+    passphrase = passphrase if passphrase else None
+    
+    success, signer = decrypt_and_verify_config(
+        encrypted_path, trusted_fingerprints, config_path, passphrase, gpg_home
+    )
+    
+    if success and signer:
+        print(f"\n✓ File successfully decrypted and verified.")
+        print(f"  Signed by: {signer}")
+    elif success:
+        print(f"\n✓ File decrypted (unsigned or signature not checked).")
+    else:
+        print(f"\n✗ Decryption or verification failed.")
+    
+    input("\nPress Enter to continue...")
+
+
+def sign_config_cli(config_path, gpg_home=None):
+    """CLI for signing the config file only (without encryption).
+    
+    Creates a detached signature file that can be verified against trusted keys.
+    
+    Parameters:
+    - config_path (str): Path to the ssh-config.yaml file.
+    - gpg_home (str): Path to the GPG home directory.
+    """
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=== Sign Config File ===\n")
+    
+    if not os.path.exists(config_path):
+        print(f"Config file not found: {config_path}")
+        input("Press Enter to continue...")
+        return
+    
+    # Let user select signing key
+    secret_keys = list_secret_keys(gpg_home)
+    if not secret_keys:
+        print("No private keys found in keyring. Cannot sign.")
+        input("Press Enter to continue...")
+        return
+    
+    print("Available private keys:")
+    for i, key in enumerate(secret_keys, 1):
+        uids = key.get("uids", ["Unknown"])
+        print(f"  {i}. {key.get('keyid', 'N/A')} - {uids[0] if uids else 'N/A'}")
+    
+    key_fingerprint = None
+    try:
+        choice = int(input("\nEnter key number to sign with (or 0 for default): ").strip())
+        if 1 <= choice <= len(secret_keys):
+            key_fingerprint = secret_keys[choice - 1].get("fingerprint")
+    except ValueError:
+        pass
+    
+    confirm = input("\nSign the config file? (y/N): ").strip().lower()
+    
+    if confirm == "y":
+        import getpass
+        passphrase = getpass.getpass("Enter GPG passphrase (or blank if using agent): ")
+        passphrase = passphrase if passphrase else None
+        
+        if sign_config(config_path, key_fingerprint, passphrase, gpg_home):
+            print("\n✓ Config file signed successfully.")
+            print(f"  Signature saved to: {config_path}.sig")
+        else:
+            print("\n✗ Signing failed.")
+    
+    input("\nPress Enter to continue...")
+
+
+def verify_config_cli(config, config_path, gpg_home=None):
+    """CLI for verifying the config file signature.
+    
+    Verifies the detached signature against trusted public keys.
+    
+    Parameters:
+    - config (dict): Configuration dictionary.
+    - config_path (str): Path to the ssh-config.yaml file.
+    - gpg_home (str): Path to the GPG home directory.
+    """
+    os.system("cls" if os.name == "nt" else "clear")
+    print("=== Verify Config Signature ===\n")
+    
+    if not os.path.exists(config_path):
+        print(f"Config file not found: {config_path}")
+        input("Press Enter to continue...")
+        return
+    
+    sig_path = config_path + ".sig"
+    if not os.path.exists(sig_path):
+        print(f"Signature file not found: {sig_path}")
+        input("Press Enter to continue...")
+        return
+    
+    # Get trusted fingerprints from config
+    trusted_fingerprints = [
+        k.get("fingerprint") for k in config.get("gpg_public_keys", []) 
+        if k.get("fingerprint")
+    ]
+    
+    if trusted_fingerprints:
+        gpg_keys_print(config)
+        print(f"\nVerifying against {len(trusted_fingerprints)} trusted key(s)...")
+    else:
+        print("Warning: No trusted keys configured.")
+        print("Signature will be verified but signer trust cannot be checked.")
+    
+    is_valid, signer = verify_config_signature(config_path, trusted_fingerprints, gpg_home)
+    
+    if is_valid:
+        print(f"\n✓ Signature is VALID and from a trusted key.")
+        print(f"  Signed by: {signer}")
+    elif signer:
+        print(f"\n⚠ Signature is valid but signer is NOT in trusted keys.")
+        print(f"  Signed by: {signer}")
+    else:
+        print(f"\n✗ Signature verification FAILED.")
+    
+    input("\nPress Enter to continue...")

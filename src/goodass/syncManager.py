@@ -143,14 +143,26 @@ def upload_config_to_server(config_path, server, ssh_private_key_path):
         
         sftp = client.open_sftp()
         
-        # Ensure remote directory exists
+        # Ensure remote directory exists using SFTP operations
         remote_dir = os.path.dirname(remote_path)
-        try:
-            # Try to create directory, ignore if it exists
-            stdin, stdout, stderr = client.exec_command(f"mkdir -p {remote_dir}")
-            stdout.read()  # Wait for command to complete
-        except Exception:
-            pass
+        if remote_dir:
+            try:
+                # Try to create parent directories using SFTP
+                path_parts = remote_dir.split('/')
+                current_path = ""
+                for part in path_parts:
+                    if not part:
+                        continue
+                    current_path = current_path + "/" + part
+                    try:
+                        sftp.stat(current_path)
+                    except IOError:
+                        try:
+                            sftp.mkdir(current_path)
+                        except IOError:
+                            pass  # Directory might already exist
+            except Exception:
+                pass
         
         sftp.put(config_path, remote_path)
         sftp.close()

@@ -461,7 +461,9 @@ def add_file_cli(settings, config_dir):
     if not os.path.exists(path):
         create = input(f"File {path} does not exist. Create it? (y/N): ").strip().lower()
         if create == "y":
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            dir_path = os.path.dirname(path)
+            if dir_path:  # Only create directory if path has a directory component
+                os.makedirs(dir_path, exist_ok=True)
             with open(path, "w") as f:
                 yaml.dump({"hosts": [], "users": []}, f)
             print(f"Created {path}")

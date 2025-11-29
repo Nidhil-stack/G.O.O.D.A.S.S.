@@ -202,9 +202,8 @@ Welcome to the SSH Key Manager (v0.3.0-pre), please select an option:\n
             settings = multiFileManager.load_settings(config_dir)
         elif option == "8":
             ssh_private_key_path = settingsManager.settings_cli(config_dir, config_path)
-            # Reload settings to get updated gpg_home
-            with open(os.path.join(config_dir, "settings.yaml"), "r") as f:
-                settings = yaml.safe_load(f) or {}
+            # Reload settings to get updated gpg_home using consistent function
+            settings = multiFileManager.load_settings(config_dir)
         elif option == "9" or option.lower() == "exit" or option.lower() == "q":
             utils.exit_gracefully()
         else:

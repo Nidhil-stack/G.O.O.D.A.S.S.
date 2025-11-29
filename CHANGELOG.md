@@ -22,19 +22,27 @@
   - Prompt for file selection only when multiple files exist and no prior selection is found
   - Quick "all" option to select all files at once
 
-#### GPG Encryption Support
-- **New `gpgManager.py` module**: Protect config files with GPG encryption
+#### GPG Encryption & Signing Support
+- **New `gpgManager.py` module**: Protect config files with GPG encryption and signing
   - Support for multiple GPG public keys (any one can unlock the file)
   - Add keys from system keyring or import from file
   - Remove GPG public keys from configuration
   - List available keys in system keyring
-  - Encrypt/decrypt config files
+  - **Sign & Encrypt**: Sign files with private key before encrypting for integrity protection
+  - **Decrypt & Verify**: Decrypt files and verify signature against trusted public keys
+  - **Sign Only**: Create detached signatures for config files
+  - **Verify Signature**: Verify detached signatures against trusted keys to prevent injection attacks
   - GPG public keys are stored in the ssh-config.yaml file itself
 
 #### Settings Enhancements
 - **GPG Home Directory**: New setting for specifying GPG private key location
   - Configurable via Settings menu (option 4)
   - Defaults to system default (~/.gnupg) if not set
+
+### 🔐 Security Improvements
+- **File Signing**: Config files can now be cryptographically signed to protect against injection vulnerabilities
+- **Signature Verification**: Verify that downloaded/synced files are from trusted sources before using them
+- **Trusted Key List**: Maintain a list of trusted GPG public keys for signature verification
 
 ### 🎨 UI Changes
 
