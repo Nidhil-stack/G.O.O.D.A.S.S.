@@ -171,21 +171,26 @@ def edit_ssh_private_key_path(settings, config_dir, config_path):
                     break
             
             if not user_exists:
-                config.setdefault("users", []).append(
-                    {
-                        "username": "goodass_user",
-                        "keys": [
-                            {
-                                "type": public_key.split(" ")[0],
-                                "key": public_key.split(" ")[1],
-                                "hostname": "goodass_key@generated",
-                            }
-                        ],
-                    }
-                )
-                with open(config_path, "w") as f:
-                    yaml.dump(config, f)
-                print("Added generated key to configuration as 'goodass_user'.")
+                # Validate public_key format before using
+                key_parts = public_key.split(" ")
+                if len(key_parts) >= 2:
+                    config.setdefault("users", []).append(
+                        {
+                            "username": "goodass_user",
+                            "keys": [
+                                {
+                                    "type": key_parts[0],
+                                    "key": key_parts[1],
+                                    "hostname": "goodass_key@generated",
+                                }
+                            ],
+                        }
+                    )
+                    with open(config_path, "w") as f:
+                        yaml.dump(config, f)
+                    print("Added generated key to configuration as 'goodass_user'.")
+                else:
+                    print("Warning: Generated key has unexpected format, skipping config update.")
     else:
         # Validate the path exists
         if os.path.exists(new_path):
@@ -228,8 +233,12 @@ def edit_verbosity(settings):
         print("Verbosity setting cleared.")
     else:
         try:
-            settings['verbosity'] = int(new_value)
-            print(f"Verbosity updated to: {settings['verbosity']}")
+            val = int(new_value)
+            if val < 0:
+                print("Invalid value. Verbosity must be 0 or greater.")
+            else:
+                settings['verbosity'] = val
+                print(f"Verbosity updated to: {settings['verbosity']}")
         except ValueError:
             print("Invalid value. Please enter a number.")
     
@@ -261,8 +270,12 @@ def edit_max_threads_per_host(settings):
         print("max_threads_per_host setting cleared.")
     else:
         try:
-            settings['max_threads_per_host'] = int(new_value)
-            print(f"max_threads_per_host updated to: {settings['max_threads_per_host']}")
+            val = int(new_value)
+            if val <= 0:
+                print("Invalid value. max_threads_per_host must be greater than 0.")
+            else:
+                settings['max_threads_per_host'] = val
+                print(f"max_threads_per_host updated to: {settings['max_threads_per_host']}")
         except ValueError:
             print("Invalid value. Please enter a number.")
     
