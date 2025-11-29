@@ -15,17 +15,22 @@ except ImportError:
     READLINE_AVAILABLE = False
 
 
-def setup_readline():
+def setup_readline(delims=' \t\n;'):
     """Initialize readline with tab completion settings.
     
     On Windows without readline, this function does nothing.
+    
+    Parameters:
+    - delims (str): Characters to use as word delimiters for completion.
+                   Default is ' \\t\\n;'. For completions that include spaces,
+                   use '' or a custom set without space.
     """
     if not READLINE_AVAILABLE:
         return
     # Enable tab completion
     readline.parse_and_bind("tab: complete")
-    # Set completer delimiters (don't break on these characters)
-    readline.set_completer_delims(' \t\n;')
+    # Set completer delimiters
+    readline.set_completer_delims(delims)
 
 
 def path_completer(text, state):
@@ -131,12 +136,14 @@ def input_with_path_completion(prompt):
         readline.set_completer(old_completer)
 
 
-def input_with_list_completion(prompt, options):
+def input_with_list_completion(prompt, options, allow_spaces=False):
     """Get user input with tab completion from a list of options.
     
     Parameters:
     - prompt (str): The prompt to display to the user.
     - options (list): List of string options for tab completion.
+    - allow_spaces (bool): If True, allows completion of options with spaces
+                          (e.g., "remove user@host"). Default is False.
     
     Returns:
     - str: The user's input.
@@ -147,7 +154,9 @@ def input_with_list_completion(prompt, options):
     if not READLINE_AVAILABLE:
         return input(prompt)
     
-    setup_readline()
+    # Use empty delimiters if we need to complete options with spaces
+    delims = '' if allow_spaces else ' \t\n;'
+    setup_readline(delims)
     old_completer = readline.get_completer()
     completer = create_list_completer(options)
     readline.set_completer(completer)

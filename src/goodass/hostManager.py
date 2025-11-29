@@ -14,7 +14,7 @@ HOST_COMMANDS = ['add', 'remove', 'rm', 'back', 'done', 'q']
 HOST_CLI_PROMPT = (
     "Type 'add' to add host, 'remove' to remove host, followed by the host\n"
     "you intend to edit in the format username@host\n"
-    "(type 'back', 'done' or 'q' to finish, Tab for completion): "
+    "(type 'back', 'done' or 'q' to finish, Tab for removal completion): "
 )
 
 
@@ -148,8 +148,8 @@ def hosts_remove(config, host, user=None):
 def get_host_completions(config):
     """Get list of completions for host management.
     
-    Returns a list of all user@host combinations and hosts from config,
-    prefixed with 'add' and 'remove' commands for tab completion.
+    Returns a list of removal commands with user@host combinations and hosts from config.
+    Only provides completions for removing hosts, not adding (since new hosts can be any string).
     
     Parameters:
     - config (dict): Configuration dictionary containing hosts.
@@ -162,13 +162,11 @@ def get_host_completions(config):
     for host_entry in config.get("hosts", []):
         host = host_entry.get("host", "")
         if host:
-            # Add just the host
-            completions.append(f"add {host}")
+            # Only add remove commands - not add commands (since you add new hosts, not existing ones)
             completions.append(f"remove {host}")
             completions.append(f"rm {host}")
-            # Add user@host combinations
+            # Add user@host combinations for removal
             for user in host_entry.get("users", []):
-                completions.append(f"add {user}@{host}")
                 completions.append(f"remove {user}@{host}")
                 completions.append(f"rm {user}@{host}")
     
@@ -189,11 +187,12 @@ def host_cli(config="config.yaml"):
     while True:
         os.system("cls" if os.name == "nt" else "clear")
         hosts_print(config)
-        # Get completions for autocomplete
+        # Get completions for autocomplete (only for removal, not adding)
         completions = get_host_completions(config)
         user_input = autocomplete.input_with_list_completion(
             HOST_CLI_PROMPT,
-            completions
+            completions,
+            allow_spaces=True  # Allow completion of "remove user@host" with spaces
         ).strip()
         if user_input.lower() in ["back", "done", "q"]:
             return
