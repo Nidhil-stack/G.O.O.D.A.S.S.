@@ -2,7 +2,47 @@
 
 This document provides installation instructions and operational guidelines for managing SSH authorized keys across multiple hosts.
 
------
+---
+
+## 📑 Table of Contents
+
+- [Installation and Configuration](#️-installation-and-configuration)
+  - [Installation](#-installation)
+  - [First Run and Setup Wizard](#-first-run-and-setup-wizard)
+  - [Configuration Files](#-configuration-files)
+  - [Thread Limiting](#-thread-limiting-optional)
+- [Main Menu Overview](#-main-menu-overview)
+- [Core Features](#-core-features)
+  - [Fetch and Display SSH Keys](#1-fetch-and-display-ssh-keys)
+  - [Fix SSH Key Issues](#2-fix-ssh-key-issues)
+  - [Manage Users](#3-manage-users)
+  - [Manage Hosts](#4-manage-hosts)
+- [Remote Sync (SFTP)](#-remote-sync-sftp)
+  - [Adding a Sync Server](#adding-a-sync-server)
+  - [Uploading Config to Servers](#uploading-config-to-servers)
+  - [Downloading Config from Server](#downloading-config-from-server)
+  - [Autosync on Startup](#autosync-on-startup)
+- [GPG Encryption & Signing](#-gpg-encryption--signing)
+  - [Managing GPG Public Keys](#managing-gpg-public-keys)
+  - [Sign & Encrypt Config File](#sign--encrypt-config-file)
+  - [Decrypt & Verify Config File](#decrypt--verify-config-file)
+  - [Sign Config Only](#sign-config-only)
+  - [Verify Config Signature](#verify-config-signature)
+- [Multi-File Management](#-multi-file-management)
+  - [Adding Config Files](#adding-config-files)
+  - [Selecting Files to Use](#selecting-files-to-use)
+  - [Working with Multiple Files](#working-with-multiple-files)
+- [Settings](#️-settings)
+- [Non-Interactive Mode](#-non-interactive-mode)
+- [Security Best Practices](#️-security-best-practices)
+- [Password Configuration (Use with Caution)](#️-optional-password-configuration-use-with-caution)
+- [Development & Testing](#-development--testing)
+- [Contributing](#-contributing)
+- [Roadmap](#️-roadmap--todo)
+- [License](#️-license)
+- [Contact](#-contact)
+
+---
 
 ## ⚙️ Installation and Configuration
 
@@ -11,15 +51,13 @@ This document provides installation instructions and operational guidelines for 
 1.  **Download the Release File:** Download the latest Wheel file (`.whl`) from the **goodass release page**: [https://github.com/Nidhil-stack/GOODASS/releases](https://github.com/Nidhil-stack/GOODASS/releases)
 2.  **Install the Package:** Install the package using **pip** from the location where you downloaded the file (replace `path/to/download` with the actual path):
 
-<!-- end list -->
-
 ```bash
-pip install path/to/download/goodass-0.2.0.whl
+pip install path/to/download/goodass-0.3.0_pre.whl
 ```
 
 ### 🚀 First Run and Setup Wizard
 
-The program now includes an **interactive Setup Wizard** that handles the initial configuration.
+The program includes an **interactive Setup Wizard** that handles the initial configuration.
 
 1.  **Run Program:** Execute the main command:
     ```bash
@@ -30,13 +68,13 @@ The program now includes an **interactive Setup Wizard** that handles the initia
       * **Create** the `settings.yaml` file interactively.
       * **Generate a new SSH keypair** for immediate use (if you don't have one).
 
-> **Note:** Because the Setup Wizard can now create the configuration, the initial configuration is **automatically skipped** if the `settings.yaml` file is found.
+> **Note:** The Setup Wizard is **automatically skipped** if the `settings.yaml` file is found.
 
 ### 📝 Configuration Files
 
-> Note: **since the 0.2 update no file needs to be created or edited manually, although you can always edit them manually or import them if you find it faster**
+> Note: **No file needs to be created or edited manually, although you can always edit them manually or import them if you find it faster.**
 
-The primary configuration file, **`settings.yaml`**, must be located in the application configuration directory.
+The primary configuration file, **`settings.yaml`**, must be located in the application configuration directory:
 
 | Operating System | Absolute Configuration Path |
 | :--- | :--- |
@@ -50,11 +88,22 @@ A minimal `settings.yaml` file looks like this:
 ssh_private_key_path: /absolute/path/to/your/key
 ```
 
-You can always **manually create or edit** this file, or provide a full configuration in the optional **`settings.yaml`** file to bypass the initial wizard prompts.
+Additional settings available:
+
+```yaml
+ssh_private_key_path: /absolute/path/to/your/key
+verbosity: 0                    # Set to 4 for debug mode
+gpg_home: ~/.gnupg              # GPG home directory (optional)
+config_files:                   # Multiple config files (optional)
+  - name: "Main Config"
+    path: "/path/to/ssh-config.yaml"
+selected_files:                 # Currently selected config files
+  - "Main Config"
+```
 
 ### 🔒 Thread Limiting (Optional)
 
-To prevent overwhelming SSH servers when managing many keys, you can limit the number of concurrent connections per host by adding the `max_threads_per_host` setting to your `ssh-config.yaml` file:
+To prevent overwhelming SSH servers when managing many keys, you can limit concurrent connections per host in `ssh-config.yaml`:
 
 ```yaml
 max_threads_per_host: 5  # Limit to 5 concurrent connections per host
@@ -64,104 +113,417 @@ max_threads_per_host: 5  # Limit to 5 concurrent connections per host
   * Set to `0` or omit the setting entirely for **no limit** (default behavior)
 
 > **❗ Error Handling Note**
-> All program errors, warnings, and log messages have been removed from output to the terminal in **Interactive Mode** or **Non-Interactive Mode** (e.g., using `--fix-keys`), these messages are **redirected and saved** in files within the same **configuration directory** (e.g., `~/.config/goodass/`). This is essential for debugging and reporting issues in automated runs. If you need to you can set **debug mode** by setting the verbosity level to 4. Doing that will give back the errors to the terminal.
+> All program errors, warnings, and log messages are **redirected and saved** in files within the configuration directory (e.g., `~/.config/goodass/`). Set **verbosity to 4** for debug mode to display errors in the terminal.
 
------
+---
+
+## 📋 Main Menu Overview
+
+When you run `goodass`, you'll see the main menu with 9 options:
+
+```
+Welcome to the SSH Key Manager (v0.3.0-pre), please select an option:
+
+    1. Fetch and display all SSH keys
+    2. Fix SSH key issues
+    3. Manage Users
+    4. Manage Hosts
+    5. Manage Remote Sync
+    6. Manage GPG Keys
+    7. Manage Config Files
+    8. Edit Settings
+    
+    9. Exit
+```
+
+---
+
+## 🔧 Core Features
+
+### 1. Fetch and Display SSH Keys
+
+Retrieves and displays all SSH public keys currently deployed on your configured hosts.
+
+**Usage:**
+1. Select option `1` from the main menu
+2. The program connects to all configured hosts
+3. Displays a table showing:
+   - Host IP/hostname
+   - Username
+   - Key type (e.g., ssh-ed25519, ssh-rsa)
+   - Key fingerprint (first 10 characters)
+   - Key hostname/comment
+
+### 2. Fix SSH Key Issues
+
+Synchronizes your configured keys with all remote hosts, ensuring each user has the correct authorized keys.
+
+**Usage:**
+1. Select option `2` from the main menu
+2. Review the displayed keys and their status:
+   - **MATCHED**: Key is correctly deployed
+   - **NOT FOUND**: Key should be added to the server
+   - **UNAUTHORIZED**: Key exists on server but not in config (will be removed)
+3. Confirm to apply fixes
+
+### 3. Manage Users
+
+Add, remove, and configure users and their SSH keys.
+
+**User Management Menu:**
+```
+    1. Add User
+    2. Add Key(s) to User
+    3. Remove Key from User
+    4. Remove User
+    5. Manage User Key Access
+    6. Back to Main Menu
+```
+
+**Key Access Management:**
+- Configure which hosts/users each key can access
+- Admin keys automatically have access to all hosts
+- Non-admin keys require explicit access configuration
+
+### 4. Manage Hosts
+
+Add and remove hosts from your configuration.
+
+**Usage:**
+- Type `add user@host` to add a new host/user combination
+- Type `remove user@host` or `rm user@host` to remove
+- Use **Tab** for autocomplete on existing entries
+
+---
+
+## 🔄 Remote Sync (SFTP)
+
+Synchronize your `ssh-config.yaml` with remote servers via SFTP. This enables configuration sharing and backup across multiple machines.
+
+**Remote Sync Menu:**
+```
+    1. Add Sync Server
+    2. Remove Sync Server
+    3. Upload Config to All Servers
+    4. Download Config from Server
+    5. Toggle Autosync on Startup
+    6. Back to Main Menu
+```
+
+### Adding a Sync Server
+
+1. Select option `5` (Manage Remote Sync) from the main menu
+2. Select option `1` (Add Sync Server)
+3. Enter the required information:
+   - **Hostname or IP**: The server address (e.g., `192.168.1.100` or `myserver.com`)
+   - **SSH Username**: The user to connect as (e.g., `admin`)
+   - **SSH Port**: Default is `22`
+   - **Remote Path**: Where to store the config (default: `~/.config/goodass/ssh-config.yaml`)
+
+**Example:**
+```
+Enter server hostname or IP: backup.example.com
+Enter SSH username: admin
+Enter SSH port (default: 22): 22
+Enter remote path (default: ~/.config/goodass/ssh-config.yaml): 
+```
+
+### Uploading Config to Servers
+
+1. Select option `3` (Upload Config to All Servers)
+2. Confirm to upload
+3. The config will be uploaded to all configured sync servers
+
+> **Note:** The upload uses your SSH private key configured in settings. Ensure key-based authentication is set up on the remote servers.
+
+### Downloading Config from Server
+
+1. Select option `4` (Download Config from Server)
+2. If multiple servers are configured, select which one to download from
+3. Confirm to download and overwrite your local config
+
+### Autosync on Startup
+
+Enable automatic synchronization when the program starts:
+
+1. Select option `5` (Toggle Autosync on Startup)
+2. When enabled, the program will:
+   - Download config from the first sync server on startup
+   - Upload to all servers after downloading (if multiple servers configured)
+
+> **Tip:** Autosync is useful for teams sharing a common configuration.
+
+---
+
+## 🔐 GPG Encryption & Signing
+
+Protect your configuration files with GPG encryption and cryptographic signatures to prevent unauthorized modifications.
+
+**GPG Key Management Menu:**
+```
+    1. Add GPG Public Key (from keyring)
+    2. Add GPG Public Key (import from file)
+    3. Remove GPG Public Key
+    4. List Available Keys in Keyring
+    5. Sign & Encrypt Config File
+    6. Decrypt & Verify Config File
+    7. Sign Config File Only
+    8. Verify Config Signature
+    9. Back to Main Menu
+```
+
+### Managing GPG Public Keys
+
+**Add from Keyring:**
+1. Select option `1` to add a key from your GPG keyring
+2. Select the key number from the displayed list
+3. The key fingerprint is stored in your config
+
+**Import from File:**
+1. Select option `2` to import from a `.asc` or `.gpg` file
+2. Enter the path to the public key file (use **Tab** for autocomplete)
+3. The key is imported to your keyring and added to the config
+
+**Remove Key:**
+1. Select option `3` to remove a key
+2. Select the key number to remove
+
+### Sign & Encrypt Config File
+
+This provides both **confidentiality** (encryption) and **integrity** (signature).
+
+1. Select option `5` (Sign & Encrypt)
+2. Select which private key to sign with
+3. Enter your GPG passphrase (if not using gpg-agent)
+4. The encrypted file is saved as `ssh-config.yaml.gpg`
+
+**Result:** Only recipients with the corresponding private keys can decrypt, and the signature proves the file hasn't been tampered with.
+
+### Decrypt & Verify Config File
+
+1. Select option `6` (Decrypt & Verify)
+2. Enter the path to the encrypted file (default: `ssh-config.yaml.gpg`)
+3. Enter your GPG passphrase
+4. The file is decrypted and the signature is verified against trusted keys
+
+**Verification outcomes:**
+- ✓ **Valid & Trusted**: Signature matches a trusted key
+- ⚠ **Valid but Untrusted**: Signature is valid but signer is not in your trusted keys
+- ✗ **Failed**: Decryption or verification failed
+
+### Sign Config Only
+
+Create a detached signature without encrypting:
+
+1. Select option `7` (Sign Config Only)
+2. Select which private key to sign with
+3. Enter your GPG passphrase
+4. A `.sig` file is created alongside your config
+
+**Use case:** Share unencrypted config but prove authenticity.
+
+### Verify Config Signature
+
+Verify a detached signature:
+
+1. Select option `8` (Verify Config Signature)
+2. The program checks `ssh-config.yaml.sig` against trusted keys
+3. Results show whether the signature is valid and from a trusted source
+
+> **Security Note:** Always verify signatures on config files received from remote sources before using them.
+
+---
+
+## 📁 Multi-File Management
+
+Work with multiple `ssh-config.yaml` files simultaneously, useful for managing different environments or projects.
+
+**Config File Management Menu:**
+```
+    1. Add Config File
+    2. Remove Config File
+    3. Select Files to Use
+    4. Select All Files
+    5. View Selected Files
+    6. Back to Main Menu
+```
+
+### Adding Config Files
+
+1. Select option `7` (Manage Config Files) from the main menu
+2. Select option `1` (Add Config File)
+3. Enter a display name (e.g., "Production", "Staging")
+4. Enter the file path (use **Tab** for autocomplete)
+5. If the file doesn't exist, you'll be asked to create it
+
+**Example:**
+```
+Enter a display name for this config: Production
+Enter path to the config file: /home/user/configs/prod-ssh-config.yaml
+File /home/user/configs/prod-ssh-config.yaml does not exist. Create it? (y/N): y
+Created /home/user/configs/prod-ssh-config.yaml
+Config file 'Production' added successfully.
+```
+
+### Selecting Files to Use
+
+1. Select option `3` (Select Files to Use)
+2. Enter your selection:
+   - Type `all` to select all files
+   - Type comma-separated numbers (e.g., `1,2,3`)
+   - Type `none` to clear selection
+
+**Example:**
+```
+Configured Config Files:
++---+------------+--------------------------------------+----------+
+| # |    Name    |                 Path                 | Selected |
++---+------------+--------------------------------------+----------+
+| 1 | Production | /home/user/configs/prod-ssh.yaml     |          |
+| 2 | Staging    | /home/user/configs/staging-ssh.yaml  |          |
+| 3 | Dev        | /home/user/configs/dev-ssh.yaml      | ✓        |
++---+------------+--------------------------------------+----------+
+
+Select files to use:
+  Type 'all' to select all files
+  Type file numbers separated by commas (e.g., 1,2,3)
+  Type 'none' to clear selection
+
+Your selection: 1,3
+Selected 2 file(s).
+```
+
+### Working with Multiple Files
+
+When multiple files are selected:
+- **Hosts and users are merged** from all selected files
+- **Changes are saved** to the first selected file
+- The selection is **remembered** across sessions
+
+**Startup behavior:**
+- If you have multiple config files and no prior selection, you'll be prompted to choose
+- Your last selection is automatically used on subsequent runs
+
+---
+
+## ⚙️ Settings
+
+Configure program settings through the Settings menu (option `8`):
+
+```
+=== Settings Configuration ===
+
+Current settings:
+  1. ssh_private_key_path: /home/user/.ssh/id_rsa
+  2. verbosity: 0
+  3. max_threads_per_host: (not set)
+  4. gpg_home: (not set)
+
+Options:
+  Enter 1, 2, 3, or 4 to edit the corresponding setting
+  Enter 'done' or 'q' to return to main menu
+```
+
+**Settings explained:**
+
+| Setting | Description |
+| :--- | :--- |
+| `ssh_private_key_path` | Path to SSH private key for connecting to hosts |
+| `verbosity` | Log level (0-3 normal, 4 for debug mode) |
+| `max_threads_per_host` | Limit concurrent SSH connections per host |
+| `gpg_home` | GPG home directory for encryption operations |
+
+---
+
+## 🤖 Non-Interactive Mode
+
+Run key synchronization without user prompts, ideal for cron jobs or automated deployments:
+
+```bash
+goodass --fix-keys
+```
+
+**Requirements:**
+- Configuration files must already exist
+- SSH key-based authentication must be set up
+- For password-protected hosts, use `passwords.yaml` (see below)
+
+---
+
+## 🛡️ Security Best Practices
+
+  * **Private Keys:** **Never** commit private keys to source control. Store them securely with restricted permissions (`chmod 600`).
+  * **GPG Signing:** Use GPG signatures to verify config file integrity, especially when syncing from remote servers.
+  * **Trusted Keys:** Only add GPG public keys from sources you trust.
+  * **SSH Agent:** Use an SSH agent to avoid storing key passphrases.
+  * **Pre-Distribution:** Verify remote server SSH policies (`sshd_config`) before mass-distributing keys.
+
+---
 
 ## ⚠️ Optional Password Configuration (Use with Caution)
 
-An optional **`passwords.yaml`** file can be placed in the same configuration directory to **skip manual password entry** during **bulk host registration**.
+An optional **`passwords.yaml`** file can be placed in the configuration directory to **skip manual password entry** during bulk host registration.
 
 > **🛑 WARNING: SECURITY RISK**
 >
 >   * The use of `passwords.yaml` is **strongly discouraged** as it stores credentials in plaintext.
->   * If used, it is **highly recommended to delete the file immediately** after the bulk registration is complete.
+>   * If used, **delete the file immediately** after bulk registration is complete.
 >   * **Never** commit this file to any source code repository.
 
------
+**Example `passwords.yaml`:**
+```yaml
+hosts:
+  - ip: 192.168.1.100
+    credentials:
+      - user: root
+        password: your_password
+      - user: admin
+        password: another_password
+```
 
-## 🛠️ Typical Workflow
-
-The program can be run in two modes: **Interactive** (default) or **Non-Interactive** (for scripting/automation).
-
-### 🖥️ Interactive Mode (Default)
-
-1.  **Verify Connectivity:** Ensure basic SSH connectivity is working for all target hosts.
-2.  **Run Program:**
-    ```bash
-    goodass
-    ```
-3.  **Main Operations:** Use the interactive program (or wizard) to:
-      * Add **hosts**, **users**, and associated **keys**.
-      * Launch the **"fix keys" utility**, which synchronizes your configured keys to the `authorized_keys` file on all added hosts.
-        
-### 🔄 Compatibility
-- Autocomplete requires the `readline` module (included by default on Linux/macOS)
-- On Windows, the application gracefully falls back to standard input without completion
-
-### 🤖 Non-Interactive Mode (For Automation)
-
-You can now automatically run the key synchronization utility without any user prompts using the `--fix-keys` argument. This is ideal for cron jobs or automated deployments.
-
-  * **Command:** Execute the key fix operation directly:
-    ```bash
-    goodass --fix-keys
-    ```
-    This command will read the existing configuration and immediately synchronize the configured keys across all registered hosts.
-
------
-
-## 🔑 Key Management Notes
-
-  * **Private Keys:** **Do not** commit private keys to the source code repository. Store them in a secure location.
-  * **Permissions:** Restrict access to private keys using strict file permissions (e.g., `chmod 600 /path/to/private/key`).
-  * **Public Keys:** Public keys can be safely included in the **`ssh-config.yaml`** for distribution.
-
------
-
-## 🛡️ Security Best Practices
-
-  * **Sensitive Data:** **Never** include passwords or private keys directly in **`ssh-config.yaml`** or commit them to source control.
-  * **Agent Usage:** Utilize an **SSH agent** or rely on the local file paths with restrictive permissions defined in **`settings.yaml`** to prevent accidental exposure.
-  * **Pre-Distribution Checks:** Before mass-distributing keys, verify the remote user permissions and the existing SSH policies (`sshd_config`) on the destination servers.
-
------
+---
 
 ## 🧑‍💻 Development & Testing
 
-  * **Execution:** To run the program during development, launch the entry point script directly:
-    ```bash
-    python src/goodass/cli.py
-    ```
-  * **Local Testing:** Test the program locally using a configuration that targets dedicated **test VMs** or **containers** to avoid impacting production systems.
+**Running during development:**
+```bash
+python src/goodass/cli.py
+```
 
------
+**Local Testing:** Test using dedicated **test VMs** or **containers** to avoid impacting production systems.
+
+**Autocomplete compatibility:**
+- Requires `readline` module (included by default on Linux/macOS)
+- On Windows, falls back to standard input without completion
+
+---
 
 ## 🤝 Contributing
 
-  * **Bug Reporting:** Report bugs by opening an issue on **GitHub** and providing clear steps to reproduce the problem.
-  * **Improvements:** Submit improvements via **pull requests**. Ensure changes are focused, clearly described, and include tests for new functionality where possible.
+  * **Bug Reporting:** Open an issue on **GitHub** with clear reproduction steps.
+  * **Improvements:** Submit **pull requests** with focused, well-described changes.
 
------
+---
 
 ## 🗺️ Roadmap / TODO
 
-> Completion of the remaining items in this list will trigger the **Version 1.0.0** release.
+> Completion of the remaining items will trigger the **Version 1.0.0** release.
 
-  * Implement a **comprehensive logging system** to capture more than just errors, including operational details, warnings, and success messages.
-  * ~~**Limit multi-threaded jobs against one host** to prevent unintentionally overwhelming the target server (e.g., avoiding a self-inflicted Distributed Denial of Service, or DDoS).~~ ✅ **Implemented** - Use the `max_threads_per_host` setting in `ssh-config.yaml`.
-  * Add functionality to synchronize **`ssh-config.yaml`** with a remote server via **SFTP**, enabling configuration collaboration among multiple users.
+  * Implement a **comprehensive logging system** for operational details, warnings, and success messages.
+  * ~~**Limit multi-threaded jobs against one host**~~ ✅ **Implemented** - Use `max_threads_per_host` setting.
+  * ~~**Synchronize ssh-config.yaml with remote servers via SFTP**~~ ✅ **Implemented** - Use "Manage Remote Sync" menu.
+  * ~~**GPG encryption for config files**~~ ✅ **Implemented** - Use "Manage GPG Keys" menu.
 
-> **Future Goal: Version 2.0 Consideration**
-> The introduction of a small **Text User Interface (TUI)** is being considered, but will be reserved as a major development goal for **Version 2.0**.
+> **Future Goal: Version 2.0**
+> A **Text User Interface (TUI)** is being considered for Version 2.0.
 
------
+---
 
 ## ⚖️ License
 
 This project is released under the license included in the repository. See the **`LICENSE`** file for details.
 
------
+---
 
 ## 📧 Contact
 
@@ -169,4 +531,4 @@ This project is released under the license included in the repository. See the *
   * **Contributors:**
     <a href="https://github.com/EddyDevProject"><img src="https://github.com/EddyDevProject.png" width="60px"/><br /></a>
 
------
+---
