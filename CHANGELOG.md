@@ -1,5 +1,106 @@
 # Changelog
 
+## Version 0.3.0-pre
+
+### ✨ New Features
+
+#### Remote Sync via SFTP
+- **New `syncManager.py` module**: Synchronize ssh-config.yaml with remote servers via SFTP
+  - Add/remove remote sync servers with custom paths
+  - Upload config to all configured servers
+  - Download config from any configured server
+  - **Autosync on startup**: Automatically sync ALL configuration files with ALL servers when the program starts
+  - Remote path defaults to the standard config location (`~/.config/goodass/ssh-config.yaml`)
+  - Sync server configuration is stored in the ssh-config.yaml file itself
+  - **Automatic GPG signing**: Files are silently signed before upload if GPG keys are configured
+  - **Automatic signature verification**: Downloaded files are silently verified against trusted keys
+
+#### Multi-File Support
+- **New `multiFileManager.py` module**: Work with multiple ssh-config.yaml files as if they were a single file
+  - Add/remove config files with custom local names
+  - **Toggle files active/inactive**: Enable or disable individual files
+  - **Rename files locally**: Give custom names to files (reverts to standard name when uploaded)
+  - Merge multiple configs as if they were a single file
+  - Remember last selection and use it automatically on startup
+  - Prompt for file selection only when multiple files exist and no prior selection is found
+  - Quick "all" option to select all files at once
+  - **All active files are synced** when autosync is enabled
+  - **Sync selection**: Configure which files to sync in non-interactive mode (saved separately)
+  - **Target file selection**: When adding new users/hosts, you can select which config file to add them to
+
+#### Non-Interactive Mode Sync
+- **Sync selection for `--fix-keys`**: Configure specific files to sync in non-interactive mode
+  - Set via "Set Sync Selection" in Config File Management menu
+  - If not set, uses currently active files
+  - Selection is saved in settings and persisted across sessions
+
+#### GPG Encryption & Signing Support
+- **New `gpgManager.py` module**: Protect config files with GPG encryption and signing
+  - Support for multiple GPG public keys (any one can unlock the file)
+  - Add keys from system keyring or import from file
+  - Remove GPG public keys from configuration
+  - List available keys in system keyring
+  - **Sign & Encrypt**: Sign files with private key before encrypting for integrity protection
+  - **Decrypt & Verify**: Decrypt files and verify signature against trusted public keys
+  - **Sign Only**: Create detached signatures for config files
+  - **Verify Signature**: Verify detached signatures against trusted keys to prevent injection attacks
+  - GPG public keys are stored in the ssh-config.yaml file itself
+  - **Seamless integration**: GPG operations happen automatically in the background during sync
+
+#### Settings Enhancements
+- **GPG Home Directory**: New setting for specifying GPG private key location
+  - Configurable via Settings menu (option 4)
+  - Defaults to system default (~/.gnupg) if not set
+- **New `settings.yaml.example`**: Example settings file with all available options documented
+
+### 🔐 Security Improvements
+- **File Signing**: Config files can now be cryptographically signed to protect against injection vulnerabilities
+- **Signature Verification**: Verify that downloaded/synced files are from trusted sources before using them
+- **Trusted Key List**: Maintain a list of trusted GPG public keys for signature verification
+- **Automatic GPG**: Signing and verification happen seamlessly in the background
+
+### 🎨 UI Changes
+
+#### Consolidated Main Menu (6 options + exit)
+1. Fetch and display all SSH keys
+2. Fix SSH key issues
+3. Manage Users
+4. Manage Hosts
+5. **Advanced Options** (consolidated submenu for Sync, GPG, Multi-File)
+6. Edit Settings
+
+7. Exit
+
+#### Advanced Options Submenu
+1. Remote Sync (SFTP)
+2. GPG Encryption & Signing
+3. Manage Config Files
+4. Back to Main Menu
+
+#### Config File Management Menu (8 options)
+1. Add Config File
+2. Remove Config File
+3. Toggle File Active On/Off
+4. Rename Config File (local name)
+5. Set Sync Selection (for non-interactive mode)
+6. Select All Files Active
+7. View Selected Files
+8. Back to Main Menu
+
+#### License Display
+- License information is now displayed at the bottom of the main menu and submenus
+
+### 📦 Dependencies
+- Added `python-gnupg==0.5.4` for GPG encryption support
+
+### 🔧 Technical Details
+- All new features are implemented as separate modules for clean code organization
+- Consistent UI patterns matching existing menus (add/remove with tab completion)
+- Sync server and GPG key configurations are stored in ssh-config.yaml for portability
+- Updated `ssh-config.yaml.example` with all new configuration options
+
+---
+
 ## Version 0.1.1
 
 ### ✨ New Features

@@ -20,16 +20,70 @@ if __package__ is None:
     import hostManager
     import utils
     import settingsManager
+    import syncManager
+    import gpgManager
+    import multiFileManager
 else:
     from . import keyManager
     from . import userManager
     from . import hostManager
     from . import utils
     from . import settingsManager
+    from . import syncManager
+    from . import gpgManager
+    from . import multiFileManager
 from pathlib import Path
 import yaml
 import signal
 import tempfile
+
+
+LICENSE_TEXT = "Licensed under AGPL-3.0 | https://github.com/Nidhil-stack/GOODASS"
+
+
+def advanced_options_cli(config_dir, config_path, ssh_private_key_path, settings):
+    """CLI for advanced options submenu (Sync, GPG, Multi-File).
+    
+    Parameters:
+    - config_dir (str): Path to the configuration directory.
+    - config_path (str): Path to the ssh-config.yaml file.
+    - ssh_private_key_path (str): Path to the SSH private key.
+    - settings (dict): Settings dictionary.
+    
+    Returns:
+    - dict: Updated settings dictionary.
+    """
+    advanced_menu = """
+Advanced Options:
+
+    1. Remote Sync (SFTP)
+    2. GPG Encryption & Signing
+    3. Manage Config Files
+
+    4. Back to Main Menu
+    """
+    
+    while True:
+        os.system("cls" if os.name == "nt" else "clear")
+        print(advanced_menu)
+        print(f"\n{LICENSE_TEXT}")
+        option = input("\nEnter option number: ")
+        os.system("cls" if os.name == "nt" else "clear")
+        
+        if option == "1":
+            syncManager.sync_cli(config_dir, config_path, ssh_private_key_path)
+        elif option == "2":
+            gpgManager.gpg_cli(config_dir, config_path, settings)
+        elif option == "3":
+            multiFileManager.multifile_cli(config_dir)
+            settings = multiFileManager.load_settings(config_dir)
+        elif option == "4" or option.lower() in ["back", "done", "q"]:
+            return settings
+        else:
+            print("Invalid option selected.")
+            input("Press Enter to continue...")
+    
+    return settings
 
 
 def main():
@@ -133,6 +187,12 @@ def main():
         stderr_file = open(err_log_path, "w")
         sys.stderr = stderr_file
 
+    # Check for multi-file setup and prompt for selection if needed
+    settings = multiFileManager.file_selection_prompt(settings, config_dir)
+
+    # Perform autosync if enabled (syncs ALL config files based on selection)
+    syncManager.perform_autosync(config_path, ssh_private_key_path, settings, non_interactive)
+
     if non_interactive:
         keyManager.non_interactive_fix_keys(
             pwds,
@@ -143,21 +203,24 @@ def main():
         utils.exit_gracefully()
 
     menu = """
-Welcome to the SSH Key Manager, please select an option:\n
+Welcome to the SSH Key Manager (v0.3.0-pre), please select an option:
+
     1. Fetch and display all SSH keys
     2. Fix SSH key issues
     3. Manage Users
     4. Manage Hosts
-    5. Edit Settings
+    5. Advanced Options (Sync, GPG, Multi-File)
+    6. Edit Settings
     
-    6. Exit
+    7. Exit
     """
 
     #### Main CLI Loop ####
     while True:
         os.system("cls" if os.name == "nt" else "clear")
         print(menu)
-        option = input("Enter option number: ")
+        print(f"\n{LICENSE_TEXT}")
+        option = input("\nEnter option number: ")
         os.system("cls" if os.name == "nt" else "clear")
         if option == "1":
             keyManager.print_keys_table_cli(
@@ -174,12 +237,16 @@ Welcome to the SSH Key Manager, please select an option:\n
                 directory=directory,
             )
         elif option == "3":
-            userManager.user_cli(config_path)
+            userManager.user_cli(config_path, config_dir=config_dir)
         elif option == "4":
-            hostManager.host_cli(config_path)
+            hostManager.host_cli(config_path, config_dir=config_dir)
         elif option == "5":
+            settings = advanced_options_cli(config_dir, config_path, ssh_private_key_path, settings)
+        elif option == "6":
             ssh_private_key_path = settingsManager.settings_cli(config_dir, config_path)
-        elif option == "6" or option.lower() == "exit" or option.lower() == "q":
+            # Reload settings to get updated gpg_home using consistent function
+            settings = multiFileManager.load_settings(config_dir)
+        elif option == "7" or option.lower() == "exit" or option.lower() == "q":
             utils.exit_gracefully()
         else:
             print("Invalid option selected.")
