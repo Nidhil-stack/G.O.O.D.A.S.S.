@@ -7,7 +7,7 @@ including path completion for SSH private key selection.
 import os
 import yaml
 
-if __package__ is None:
+if __package__ is None or __package__ == "":
     import autocomplete
     import utils
 else:
@@ -258,8 +258,12 @@ def edit_gpg_home(settings):
     os.system("cls" if os.name == "nt" else "clear")
     print("=== Edit GPG Home Directory ===\n")
     current_value = settings.get("gpg_home", "")
-    print(f"Current value: {current_value if current_value else '(not set - using system default)'}")
-    print("\nEnter path to the GPG home directory (where your GPG private keys are stored).")
+    print(
+        f"Current value: {current_value if current_value else '(not set - using system default)'}"
+    )
+    print(
+        "\nEnter path to the GPG home directory (where your GPG private keys are stored)."
+    )
     print("Leave blank to use the system default (~/.gnupg).")
     print("(Use Tab for path completion)")
 
