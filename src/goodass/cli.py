@@ -237,9 +237,9 @@ Welcome to the SSH Key Manager (v0.3.0-pre), please select an option:
                 directory=directory,
             )
         elif option == "3":
-            userManager.user_cli(config_path)
+            userManager.user_cli(config_path, config_dir=config_dir)
         elif option == "4":
-            hostManager.host_cli(config_path)
+            hostManager.host_cli(config_path, config_dir=config_dir)
         elif option == "5":
             settings = advanced_options_cli(config_dir, config_path, ssh_private_key_path, settings)
         elif option == "6":

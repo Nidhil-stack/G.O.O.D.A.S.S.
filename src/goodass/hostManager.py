@@ -4,8 +4,10 @@ import prettytable
 
 if __package__ is None or __package__ == "":
     import autocomplete
+    import multiFileManager
 else:
     from . import autocomplete
+    from . import multiFileManager
 # Commands available for host management
 HOST_COMMANDS = ["add", "remove", "rm", "back", "done", "q"]
 
@@ -172,13 +174,14 @@ def get_host_completions(config):
     return completions
 
 
-def host_cli(config="config.yaml"):
+def host_cli(config="config.yaml", config_dir=None):
     """
     CLI for managing hosts in the configuration.
 
     Parameters:
     - config (str or dict): Either a string specifying the path to the configuration file (default: 'config.yaml'),
       or a dictionary containing the loaded configuration. If a string is provided, the configuration will be loaded from the file.
+    - config_dir (str): Path to the config directory (for multi-file selection when adding hosts).
     """
     config_path = config if isinstance(config, str) else "config.yaml"
     if isinstance(config, str):
@@ -204,6 +207,38 @@ def host_cli(config="config.yaml"):
         host = parts[1].split("@")[1] if "@" in parts[1] else parts[1]
         user = parts[1].split("@")[0] if "@" in parts[1] else None
         if action.lower() == "add":
+            # If adding and we have multiple active config files, let user choose
+            target_path = config_path
+            if config_dir:
+                settings = multiFileManager.load_settings(config_dir)
+                selected = settings.get("selected_files", [])
+                files = settings.get("config_files", [])
+                
+                if len(selected) > 1:
+                    os.system("cls" if os.name == "nt" else "clear")
+                    print("=== Select Target Config File ===\n")
+                    print("Multiple config files are active. Select which file to add the host to:\n")
+                    active_files = [f for f in files if f.get("name") in selected]
+                    for i, f in enumerate(active_files, 1):
+                        print(f"  {i}. {f.get('name')} ({f.get('path')})")
+                    
+                    try:
+                        choice = int(input("\nEnter file number: ").strip())
+                        if 1 <= choice <= len(active_files):
+                            target_path = active_files[choice - 1].get("path")
+                        else:
+                            print("Invalid selection. Using current file.")
+                    except ValueError:
+                        print("Invalid input. Using current file.")
+                    
+                    # Load the target config
+                    if target_path != config_path:
+                        target_config = load_config(target_path)
+                        target_config = hosts_add(target_config, host, user)
+                        save_config(target_config, target_path)
+                        print(f"Host {host} added to {os.path.basename(target_path)}.")
+                        continue
+            
             config = hosts_add(config, host, user)
             save_config(config, config_path)
             print(f"Host {host} added.")

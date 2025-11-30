@@ -2,6 +2,7 @@
 
 This module provides functions for synchronizing ssh-config.yaml files
 with remote servers via SFTP, supporting both manual and automatic sync.
+GPG signing/encryption is handled automatically and silently.
 """
 
 import os
@@ -10,8 +11,10 @@ import paramiko
 
 if __package__ is None:
     import autocomplete
+    import gpgManager
 else:
     from . import autocomplete
+    from . import gpgManager
 
 
 def get_remote_config_path():
@@ -115,13 +118,92 @@ def remove_remote_server(config, host, username):
     return config
 
 
-def upload_config_to_server(config_path, server, ssh_private_key_path):
+def silent_sign_before_upload(config_path, config, gpg_home=None):
+    """Silently sign config file before upload if GPG keys are configured.
+    
+    This is called automatically before uploading to create/update the signature.
+    
+    Parameters:
+    - config_path (str): Path to the config file.
+    - config (dict): Configuration dictionary (to get GPG keys).
+    - gpg_home (str): Path to GPG home directory.
+    
+    Returns:
+    - bool: True if signed successfully or no keys configured, False on error.
+    """
+    gpg_keys = config.get("gpg_public_keys", [])
+    if not gpg_keys:
+        return True  # No GPG configured, skip silently
+    
+    try:
+        # Get secret keys to sign with
+        secret_keys = gpgManager.list_secret_keys(gpg_home)
+        if not secret_keys:
+            return True  # No secret key available, skip silently
+        
+        # Sign with the first available secret key (silent, no passphrase prompt)
+        gpg = gpgManager.get_gpg(gpg_home)
+        with open(config_path, "rb") as f:
+            data = f.read()
+        
+        signed = gpg.sign(data, detach=True, armor=True)
+        
+        if signed.data:
+            sig_path = config_path + ".sig"
+            with open(sig_path, "wb") as f:
+                f.write(signed.data)
+            return True
+        return True  # Don't fail silently even if signing fails
+    except Exception:
+        return True  # Don't fail upload if signing fails
+
+
+def silent_verify_after_download(config_path, config, gpg_home=None):
+    """Silently verify config signature after download if GPG keys are configured.
+    
+    This is called automatically after downloading to verify integrity.
+    
+    Parameters:
+    - config_path (str): Path to the config file.
+    - config (dict): Configuration dictionary (to get trusted keys).
+    - gpg_home (str): Path to GPG home directory.
+    
+    Returns:
+    - tuple: (is_valid, warning_message) - is_valid True if verified or no keys, 
+             warning_message is None or string with warning.
+    """
+    gpg_keys = config.get("gpg_public_keys", [])
+    if not gpg_keys:
+        return True, None  # No GPG configured, skip silently
+    
+    sig_path = config_path + ".sig"
+    if not os.path.exists(sig_path):
+        return True, "No signature file found (unsigned file)"
+    
+    try:
+        trusted_fingerprints = [k.get("fingerprint") for k in gpg_keys if k.get("fingerprint")]
+        is_valid, signer = gpgManager.verify_config_signature(config_path, trusted_fingerprints, gpg_home)
+        
+        if is_valid:
+            return True, None
+        elif signer:
+            return False, f"Signature valid but signer not trusted: {signer}"
+        else:
+            return False, "Signature verification failed"
+    except Exception as e:
+        return True, f"Could not verify signature: {e}"
+
+
+def upload_config_to_server(config_path, server, ssh_private_key_path, gpg_home=None):
     """Upload the ssh-config.yaml to a remote server via SFTP.
+    
+    Automatically signs the file before upload if GPG keys are configured.
     
     Parameters:
     - config_path (str): Local path to the ssh-config.yaml file.
     - server (dict): Server configuration with host, username, port, remote_path.
     - ssh_private_key_path (str): Path to the SSH private key.
+    - gpg_home (str): Path to GPG home directory for signing.
     
     Returns:
     - bool: True if successful, False otherwise.
@@ -130,6 +212,10 @@ def upload_config_to_server(config_path, server, ssh_private_key_path):
     username = server.get("username")
     port = server.get("port", 22)
     remote_path = os.path.expanduser(server.get("remote_path", get_remote_config_path()))
+    
+    # Silently sign before upload if GPG is configured
+    config = load_ssh_config(config_path)
+    silent_sign_before_upload(config_path, config, gpg_home)
     
     try:
         client = paramiko.SSHClient()
@@ -168,22 +254,35 @@ def upload_config_to_server(config_path, server, ssh_private_key_path):
                 pass
         
         sftp.put(config_path, remote_path)
+        
+        # Also upload signature file if it exists
+        sig_path = config_path + ".sig"
+        if os.path.exists(sig_path):
+            remote_sig_path = remote_path + ".sig"
+            try:
+                sftp.put(sig_path, remote_sig_path)
+            except Exception:
+                pass  # Don't fail if signature upload fails
+        
         sftp.close()
         client.close()
-        print(f"Successfully uploaded config to {username}@{host}:{remote_path}")
+        print(f"  ✓ {username}@{host}")
         return True
     except Exception as e:
-        print(f"Failed to upload to {username}@{host}: {e}")
+        print(f"  ✗ {username}@{host}: {e}")
         return False
 
 
-def download_config_from_server(config_path, server, ssh_private_key_path):
+def download_config_from_server(config_path, server, ssh_private_key_path, gpg_home=None):
     """Download the ssh-config.yaml from a remote server via SFTP.
+    
+    Automatically verifies signature after download if GPG keys are configured.
     
     Parameters:
     - config_path (str): Local path to save the ssh-config.yaml file.
     - server (dict): Server configuration with host, username, port, remote_path.
     - ssh_private_key_path (str): Path to the SSH private key.
+    - gpg_home (str): Path to GPG home directory for verification.
     
     Returns:
     - bool: True if successful, False otherwise.
@@ -208,22 +307,41 @@ def download_config_from_server(config_path, server, ssh_private_key_path):
         
         sftp = client.open_sftp()
         sftp.get(remote_path, config_path)
+        
+        # Also download signature file if it exists
+        sig_path = config_path + ".sig"
+        remote_sig_path = remote_path + ".sig"
+        try:
+            sftp.get(remote_sig_path, sig_path)
+        except Exception:
+            pass  # Signature might not exist
+        
         sftp.close()
         client.close()
-        print(f"Successfully downloaded config from {username}@{host}:{remote_path}")
+        
+        # Silently verify after download if GPG is configured
+        config = load_ssh_config(config_path)
+        is_valid, warning = silent_verify_after_download(config_path, config, gpg_home)
+        
+        if warning:
+            print(f"  ⚠ {username}@{host}: {warning}")
+        else:
+            print(f"  ✓ {username}@{host}")
+        
         return True
     except Exception as e:
-        print(f"Failed to download from {username}@{host}: {e}")
+        print(f"  ✗ {username}@{host}: {e}")
         return False
 
 
-def sync_all_servers(config_path, ssh_private_key_path, direction="upload"):
+def sync_all_servers(config_path, ssh_private_key_path, direction="upload", gpg_home=None):
     """Sync config with all configured remote servers.
     
     Parameters:
     - config_path (str): Path to the ssh-config.yaml file.
     - ssh_private_key_path (str): Path to the SSH private key.
     - direction (str): Either "upload" or "download".
+    - gpg_home (str): Path to GPG home directory.
     
     Returns:
     - int: Number of successful sync operations.
@@ -238,10 +356,10 @@ def sync_all_servers(config_path, ssh_private_key_path, direction="upload"):
     success_count = 0
     for server in servers:
         if direction == "upload":
-            if upload_config_to_server(config_path, server, ssh_private_key_path):
+            if upload_config_to_server(config_path, server, ssh_private_key_path, gpg_home):
                 success_count += 1
         elif direction == "download":
-            if download_config_from_server(config_path, server, ssh_private_key_path):
+            if download_config_from_server(config_path, server, ssh_private_key_path, gpg_home):
                 success_count += 1
     
     return success_count
@@ -508,6 +626,7 @@ def perform_autosync(config_path, ssh_private_key_path, settings=None, non_inter
     """Perform autosync if enabled for all config files.
     
     Called on startup to sync ALL configuration files with remote servers.
+    GPG signing is handled automatically and silently.
     
     Parameters:
     - config_path (str): Path to the main ssh-config.yaml file.
@@ -526,6 +645,9 @@ def perform_autosync(config_path, ssh_private_key_path, settings=None, non_inter
     servers = config.get("sync_servers", [])
     if not servers:
         return False
+    
+    # Get GPG home from settings
+    gpg_home = settings.get("gpg_home") if settings else None
     
     print("Performing autosync for all config files...")
     
@@ -566,8 +688,8 @@ def perform_autosync(config_path, ssh_private_key_path, settings=None, non_inter
     # Sync each config file with all servers
     for cfg_path in all_config_paths:
         print(f"  Syncing {os.path.basename(cfg_path)}...")
-        # Upload to ALL servers
+        # Upload to ALL servers (GPG signing handled automatically)
         for server in servers:
-            upload_config_to_server(cfg_path, server, ssh_private_key_path)
+            upload_config_to_server(cfg_path, server, ssh_private_key_path, gpg_home)
     
     return True

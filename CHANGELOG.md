@@ -12,6 +12,8 @@
   - **Autosync on startup**: Automatically sync ALL configuration files with ALL servers when the program starts
   - Remote path defaults to the standard config location (`~/.config/goodass/ssh-config.yaml`)
   - Sync server configuration is stored in the ssh-config.yaml file itself
+  - **Automatic GPG signing**: Files are silently signed before upload if GPG keys are configured
+  - **Automatic signature verification**: Downloaded files are silently verified against trusted keys
 
 #### Multi-File Support
 - **New `multiFileManager.py` module**: Work with multiple ssh-config.yaml files as if they were a single file
@@ -24,6 +26,7 @@
   - Quick "all" option to select all files at once
   - **All active files are synced** when autosync is enabled
   - **Sync selection**: Configure which files to sync in non-interactive mode (saved separately)
+  - **Target file selection**: When adding new users/hosts, you can select which config file to add them to
 
 #### Non-Interactive Mode Sync
 - **Sync selection for `--fix-keys`**: Configure specific files to sync in non-interactive mode
@@ -42,16 +45,19 @@
   - **Sign Only**: Create detached signatures for config files
   - **Verify Signature**: Verify detached signatures against trusted keys to prevent injection attacks
   - GPG public keys are stored in the ssh-config.yaml file itself
+  - **Seamless integration**: GPG operations happen automatically in the background during sync
 
 #### Settings Enhancements
 - **GPG Home Directory**: New setting for specifying GPG private key location
   - Configurable via Settings menu (option 4)
   - Defaults to system default (~/.gnupg) if not set
+- **New `settings.yaml.example`**: Example settings file with all available options documented
 
 ### 🔐 Security Improvements
 - **File Signing**: Config files can now be cryptographically signed to protect against injection vulnerabilities
 - **Signature Verification**: Verify that downloaded/synced files are from trusted sources before using them
 - **Trusted Key List**: Maintain a list of trusted GPG public keys for signature verification
+- **Automatic GPG**: Signing and verification happen seamlessly in the background
 
 ### 🎨 UI Changes
 

@@ -432,11 +432,28 @@ Active = File is used in current session
 Sync = File is included in non-interactive sync
 ```
 
+### Adding Users/Hosts to Specific Files
+
+When you have multiple active config files and add a new user or host from scratch, you'll be prompted to select which file to add it to:
+
+```
+=== Select Target Config File ===
+
+Multiple config files are active. Select which file to add the user to:
+
+  1. Production (/home/user/configs/prod-ssh.yaml)
+  2. Staging (/home/user/configs/staging-ssh.yaml)
+
+Enter file number: 
+```
+
+> **Note:** This only applies when **adding new entries from scratch**. Modifications to existing entries are handled automatically.
+
 ### Working with Multiple Files
 
 When multiple files are active:
 - **Hosts and users are merged** from all active files
-- **Changes are saved** to the first active file
+- **Changes are saved** to the first active file (or selected file for new entries)
 - The selection is **remembered** across sessions
 - **All active files are synced** when autosync is enabled
 
@@ -449,6 +466,21 @@ When multiple files are active:
 - Uses **sync_selection** if configured
 - Falls back to **active files** if no sync selection is set
 - Sync selection is saved separately from active files
+
+### Automatic GPG Operations
+
+When GPG keys are configured, the following happens **automatically and silently**:
+
+**On Upload (sync to remote):**
+1. Config file is signed with your GPG private key
+2. Both the config and signature files are uploaded
+
+**On Download (sync from remote):**
+1. Config and signature files are downloaded
+2. Signature is verified against trusted public keys
+3. Warning shown if signature is invalid or signer not trusted
+
+> **Note:** Manual GPG operations (full encryption/decryption) are still available in the GPG menu for when you need them.
 
 ---
 
@@ -479,6 +511,10 @@ Options:
 | `max_threads_per_host` | Limit concurrent SSH connections per host |
 | `gpg_home` | GPG home directory for encryption operations |
 
+### Example Settings File
+
+An example settings file (`settings.yaml.example`) is provided in the repository with all available options documented.
+
 ---
 
 ## 🤖 Non-Interactive Mode
@@ -503,6 +539,7 @@ goodass --fix-keys
   * **Trusted Keys:** Only add GPG public keys from sources you trust.
   * **SSH Agent:** Use an SSH agent to avoid storing key passphrases.
   * **Pre-Distribution:** Verify remote server SSH policies (`sshd_config`) before mass-distributing keys.
+  * **Automatic Signing:** Enable GPG by adding public keys to automatically sign files during sync.
 
 ---
 

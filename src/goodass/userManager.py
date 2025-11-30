@@ -4,8 +4,10 @@ import os
 
 if __package__ is None or __package__ == "":
     import autocomplete
+    import multiFileManager
 else:
     from . import autocomplete
+    from . import multiFileManager
 
 
 def user_print(config=None):
@@ -127,14 +129,41 @@ def get_user_email_completions(config):
     return emails
 
 
-def user_add_cli(config="config.yaml"):
+def user_add_cli(config="config.yaml", config_dir=None):
     """CLI for adding a new user.
     Parameters:
     - config (str or dict): Path to the configuration file or configuration dictionary.
+    - config_dir (str): Path to the config directory (for multi-file selection).
     """
     config_path = config if isinstance(config, str) else "config.yaml"
+    
+    # If we have multiple active config files, let user choose which one
+    if config_dir:
+        settings = multiFileManager.load_settings(config_dir)
+        selected = settings.get("selected_files", [])
+        files = settings.get("config_files", [])
+        
+        if len(selected) > 1:
+            os.system("cls" if os.name == "nt" else "clear")
+            print("=== Select Target Config File ===\n")
+            print("Multiple config files are active. Select which file to add the user to:\n")
+            active_files = [f for f in files if f.get("name") in selected]
+            for i, f in enumerate(active_files, 1):
+                print(f"  {i}. {f.get('name')} ({f.get('path')})")
+            
+            try:
+                choice = int(input("\nEnter file number: ").strip())
+                if 1 <= choice <= len(active_files):
+                    config_path = active_files[choice - 1].get("path")
+                else:
+                    print("Invalid selection. Using first file.")
+                    config_path = active_files[0].get("path") if active_files else config_path
+            except ValueError:
+                print("Invalid input. Using first file.")
+                config_path = active_files[0].get("path") if active_files else config_path
+    
     if isinstance(config, str):
-        config = load_config(config)
+        config = load_config(config_path)
     os.system("cls" if os.name == "nt" else "clear")
     user_print(config)
     username = input("Insert new user name: ")
@@ -619,12 +648,13 @@ def user_key_access_cli(config="config.yaml", email=None):
     return config
 
 
-def user_cli(config="config.yaml"):
+def user_cli(config="config.yaml", config_dir=None):
     """CLI for managing users in the configuration.
 
     Parameters:
     - config (str or dict): Either a string specifying the path to the configuration file (default: 'config.yaml'),
       or a dictionary containing the loaded configuration. If a string is provided, the configuration will be loaded from the file.
+    - config_dir (str): Path to the config directory (for multi-file selection).
     """
     config_path = config if isinstance(config, str) else "config.yaml"
     if isinstance(config, str):
@@ -649,7 +679,7 @@ User Management Menu:
         option = input("Enter option number: ")
         os.system("cls" if os.name == "nt" else "clear")
         if option == "1":
-            user_add_cli(config_path)
+            user_add_cli(config_path, config_dir=config_dir)
             config = load_config(config_path)
         elif option == "2":
             user_add_key_cli(config_path)
